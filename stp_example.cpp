@@ -6,7 +6,8 @@
 #include <random>
 #include <chrono>
 
-std::mt19937 generate(std::random_device());
+std::random_device seed;
+std::mt19937 generate(seed());
 std::uniform_int_distribution<int> random_list(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
 
 std::chrono::duration<double, std::nano> generator(std::vector<int> * vec)
@@ -31,7 +32,7 @@ std::chrono::duration<double, std::nano> quicksort(std::vector<int> * vec)
 
 int main()
 {
-	// Generating
+	// Generating vectors
 
 	std::cout << "Generating vector 1..." << std::endl;
 	std::vector<int> vec1(1000000);
@@ -72,8 +73,45 @@ int main()
 	std::vector<int> vec8(1000000);
 	auto elapsed8 = generator(&vec8);
 	std::cout << "Elapsed: " << elapsed8.count() << "ns" << std::endl;
+/*
+	std::fstream unsorted("vectors_unsorted.txt", std::ios::out | std::ios::trunc);
+	std::fstream sorted("vectors_sorted.txt", std::ios::out | std::ios::trunc);
 
-	// Sorting first 4
+	unsorted << "Vector 1:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		unsorted << vec1[i] << std::endl;
+	unsorted << "Elapsed: " << elapsed1.count() << "ns" << std::endl << std::endl;
+	unsorted << "Vector 2:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		unsorted << vec2[i] << std::endl;
+	unsorted << "Elapsed: " << elapsed2.count() << "ns" << std::endl << std::endl;
+	unsorted << "Vector 3:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		unsorted << vec3[i] << std::endl;
+	unsorted << "Elapsed: " << elapsed3.count() << "ns" << std::endl << std::endl;
+	unsorted << "Vector 4:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		unsorted << vec4[i] << std::endl;
+	unsorted << "Elapsed: " << elapsed4.count() << "ns" << std::endl << std::endl;
+	unsorted << "Vector 5:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		unsorted << vec5[i] << std::endl;
+	unsorted << "Elapsed: " << elapsed5.count() << "ns" << std::endl << std::endl;
+	unsorted << "Vector 6:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		unsorted << vec6[i] << std::endl;
+	unsorted << "Elapsed: " << elapsed6.count() << "ns" << std::endl << std::endl;
+	unsorted << "Vector 7:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		unsorted << vec7[i] << std::endl;
+	unsorted << "Elapsed: " << elapsed7.count() << "ns" << std::endl << std::endl;
+	unsorted << "Vector 8:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		unsorted << vec8[i] << std::endl;
+	unsorted << "Elapsed: " << elapsed8.count() << "ns" << std::endl << std::endl;
+*/
+	// Sorting first four vectors (without concurrency)
+
 	std::cout << "Sorting first four vectors... " << std::endl;
 	auto start_timer = std::chrono::high_resolution_clock::now();
 
@@ -96,7 +134,7 @@ int main()
 	auto stop_timer = std::chrono::high_resolution_clock::now();
 	std::cout << "Elapsed on first four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << std::endl;
 
-	// Sorting second 4...
+	// Sorting second four vectors (with concurrency)
 
 	stp::threadpool threadpool(0);
 	stp::task <std::chrono::duration<double, std::nano>> task1(quicksort, &vec5);
@@ -135,7 +173,43 @@ int main()
 
 	stop_timer = std::chrono::high_resolution_clock::now();
 	std::cout << "Elapsed on second four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << std::endl;
+/*
+	sorted << "Vector 1:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		sorted << vec1[i] << std::endl;
+	sorted << "Elapsed: " << elapsed1.count() << "ns" << std::endl << std::endl;
+	sorted << "Vector 2:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		sorted << vec2[i] << std::endl;
+	sorted << "Elapsed: " << elapsed2.count() << "ns" << std::endl << std::endl;
+	sorted << "Vector 3:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		sorted << vec3[i] << std::endl;
+	sorted << "Elapsed: " << elapsed3.count() << "ns" << std::endl << std::endl;
+	sorted << "Vector 4:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		sorted << vec4[i] << std::endl;
+	sorted << "Elapsed: " << elapsed4.count() << "ns" << std::endl << std::endl;
+	sorted << "Vector 5:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		sorted << vec5[i] << std::endl;
+	sorted << "Elapsed: " << elapsed5.count() << "ns" << std::endl << std::endl;
+	sorted << "Vector 6:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		sorted << vec6[i] << std::endl;
+	sorted << "Elapsed: " << elapsed6.count() << "ns" << std::endl << std::endl;
+	sorted << "Vector 7:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		sorted << vec7[i] << std::endl;
+	sorted << "Elapsed: " << elapsed7.count() << "ns" << std::endl << std::endl;
+	sorted << "Vector 8:" << std::endl;
+	for (int i = 0; i < 1000000; ++i)
+		sorted << vec8[i] << std::endl;
+	sorted << "Elapsed: " << elapsed8.count() << "ns" << std::endl << std::endl;
 
+	unsorted.close();
+	sorted.close();
+*/
 	threadpool.stop();
 	while (threadpool.is_running());
 	return 0;
