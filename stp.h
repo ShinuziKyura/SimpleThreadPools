@@ -36,7 +36,7 @@ namespace stp
 
 		task<ReturnType>() = delete;
 		template <typename FuncType, typename ... ArgType>
-		task(FuncType func, ArgType ... args)
+		task<ReturnType>(FuncType func, ArgType ... args)
 		{
 			package_ = std::packaged_task<decltype(func(args ...))()>(std::bind(func, args ...));
 			task_ = std::function<void()>([this]
