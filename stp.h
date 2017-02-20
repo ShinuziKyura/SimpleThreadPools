@@ -29,7 +29,7 @@ namespace stp
 				throw std::logic_error("Future not ready");
 			return task_result_.get();
 		}
-		bool is_ready(bool wait_result = false)
+		bool is_ready()
 		{
 			return task_result_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 		}
@@ -74,8 +74,10 @@ namespace stp
 		}
 		void clear_tasks()
 		{
+			std::unique_lock<std::mutex> lock_(threadpool_lock_);
 			while (!threadpool_queue_.empty())
 				threadpool_queue_.pop();
+			lock_.unlock();
 		}
 		void run()
 		{
@@ -132,8 +134,8 @@ namespace stp
 			delete[] threadpool_array_;
 		}
 	private:
-		std::thread * threadpool_array_;
 		std::queue<std::function<void()> *> threadpool_queue_;
+		std::thread * threadpool_array_;
 		std::mutex threadpool_lock_;
 		std::condition_variable threadpool_alert_;
 		std::atomic<threadpool_status> threadpool_status_;
@@ -151,9 +153,9 @@ namespace stp
 				{
 					if (!threadpool_queue_.empty())
 					{
-						threadpool_ready_.fetch_sub(1);
 						task_ = threadpool_queue_.front();
 						threadpool_queue_.pop();
+						threadpool_ready_.fetch_sub(1);
 						lock_.unlock();
 						(*task_)();
 						lock_.lock();
