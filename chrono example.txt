@@ -1,0 +1,11 @@
+	auto start = std::chrono::high_resolution_clock::now();
+	// Código a ser temporizado
+	auto stop = std::chrono::high_resolution_clock::now();
+	std::cout << std::chrono::duration<double, std::nano>(stop - start).count() << "ns\n";
+	// std::chrono::duration<double, std::nano>(stop - start).count() <---- isto devolve um double com resolução em nanosegundos
+
+	// Podes reutilizar as variáveis no código:
+	start = std::chrono::high_resolution_clock::now();
+	// Código a ser temporizado
+	stop = std::chrono::high_resolution_clock::now();
+	std::cout << std::chrono::duration<double, std::nano>(stop - start).count() << "ns\n";
