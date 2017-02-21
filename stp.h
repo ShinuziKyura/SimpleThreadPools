@@ -4,7 +4,6 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <atomic>
 #include <future>
 #include <functional>
 #include <utility>
@@ -12,24 +11,17 @@
 
 namespace stp
 {
-	enum class threadpool_status
-	{
-		running,
-		stopping,
-		terminating
-	};
-
 	template <typename ReturnType>
 	class task
 	{
 	public:
-		ReturnType task_result()
+		ReturnType result()
 		{
 			if (task_result_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
 				throw std::logic_error("Future not ready");
 			return task_result_.get();
 		}
-		bool is_ready()
+		bool is_done()
 		{
 			return task_result_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 		}
@@ -64,59 +56,50 @@ namespace stp
 		template <typename ReturnType>
 		void new_task(task<ReturnType> & task)
 		{
-			if (threadpool_status_.load() == threadpool_status::terminating)
-				return;
-
-			std::unique_lock<std::mutex> lock_(threadpool_lock_);
-			threadpool_queue_.push(&task.task_);
-			lock_.unlock();
-			threadpool_alert_.notify_one();
+			std::lock_guard<std::mutex> lock_(thread_lock_);
+			task_queue_.push(&task.task_);
+			notify_one(notification_(message::new_task, this));
 		}
-		void clear_tasks()
+		template <typename ReturnType>
+		void new_sync_task(task<ReturnType> & task)
 		{
-			std::unique_lock<std::mutex> lock_(threadpool_lock_);
-			while (!threadpool_queue_.empty())
-				threadpool_queue_.pop();
-			lock_.unlock();
+			std::lock_guard<std::mutex> lock_(thread_lock_);
+			task_queue_.push(&task.task_);
+			notify_one(notification_(message::new_sync_task, this));
 		}
 		void run()
 		{
-			if (threadpool_status_.load() == threadpool_status::terminating)
-				return;
-
-			std::unique_lock<std::mutex> lock_(threadpool_lock_);
-			threadpool_status_.store(threadpool_status::running);
-			lock_.unlock();
-			threadpool_alert_.notify_all();
+			std::lock_guard<std::mutex> lock_(thread_lock_);
+			notify_all(notification_(message::run, this));
+		}
+		void run_sync()
+		{
+			std::lock_guard<std::mutex> lock_(thread_lock_);
+			notify_all(notification_(message::run_sync, this));
 		}
 		void stop()
 		{
-			if (threadpool_status_.load() == threadpool_status::terminating)
-				return;
-
-			std::unique_lock<std::mutex> lock_(threadpool_lock_);
-			threadpool_status_.store(threadpool_status::stopping);
-			lock_.unlock();
-			threadpool_alert_.notify_all();
+			std::lock_guard<std::mutex> lock_(thread_lock_);
+			notify_all(notification_(message::stop, this));
+		}
+		void finalize()
+		{
+			std::lock_guard<std::mutex> lock_(thread_lock_);
+			notify_all(notification_(message::finalize, this));
 		}
 		bool is_running()
 		{
-			if (threadpool_status_.load() == threadpool_status::terminating)
-				return false;
-
-			return threadpool_size_ != threadpool_ready_.load();
+			// To do
+			return false;
 		}
 
 		threadpool() = delete;
-		threadpool(size_t threadpool_size, threadpool_status threadpool_status = threadpool_status::stopping) : 
+		threadpool(size_t threadpool_size) : 
 			threadpool_size_(threadpool_size == 0 ? threadpool_size = std::thread::hardware_concurrency() : threadpool_size)
 		{
-			threadpool_status_.store(threadpool_status);
-			threadpool_ready_.store(threadpool_size_);
-			threadpool_array_ = new std::thread[threadpool_size_];
-
-			while (threadpool_size > 0)
-				threadpool_array_[threadpool_size_ - threadpool_size--] = std::thread(&threadpool::threadpool_, this);
+			thread_array_ = new std::thread[threadpool_size_];
+			for (size_t i = 0; i < threadpool_size_; ++i)
+				thread_array_[i] = std::thread(&threadpool::threadpool_, this);
 		}
 		threadpool(threadpool const &) = delete;
 		threadpool & operator=(threadpool const &) = delete;
@@ -124,66 +107,58 @@ namespace stp
 		threadpool & operator=(threadpool &&) = delete;
 		~threadpool()
 		{
-			std::unique_lock<std::mutex> lock_(threadpool_lock_);
-			threadpool_status_.store(threadpool_status::terminating);
-			lock_.unlock();
-			threadpool_alert_.notify_all();
+			std::lock_guard<std::mutex> lock_(thread_lock_);
+			notify_all(notification_(message::terminate, this));
 
 			for (size_t i = 0; i < threadpool_size_; ++i)
-				threadpool_array_[i].join();
-			delete[] threadpool_array_;
+				thread_array_[i].join();
+			delete[] thread_array_;
+
+			while (!notification_queue_.empty())
+				delete notification_queue_.front();
 		}
 	private:
-		std::queue<std::function<void()> *> threadpool_queue_;
-		std::thread * threadpool_array_;
-		std::mutex threadpool_lock_;
-		std::condition_variable threadpool_alert_;
-		std::atomic<threadpool_status> threadpool_status_;
-		std::atomic<size_t> threadpool_ready_;
-		size_t const threadpool_size_;
+		typedef std::function<void()> task_;
+		enum class message
+		{
+			run,
+			run_sync,
+			stop,
+			new_task,
+			new_sync_task,
+			finalize,
+			terminate
+		};
+		struct notification_
+		{
+			int id;
+			int notified;
+			message msg;
+			notification_(message msg, threadpool * this_) : id(++(this_->notification_id_)), notified(this_->threadpool_size_), msg(msg)
+			{
+			}
+		};
 
+		std::queue<task_ *> task_queue_;
+		std::queue<notification_ *> notification_queue_;
+		std::thread * thread_array_;
+		std::mutex thread_lock_;
+		std::condition_variable thread_alert_;
+		size_t const threadpool_size_;
+		size_t notification_id_ = 0;
+
+		void notify_one(notification_ notification_)
+		{
+			// To do
+		}
+		void notify_all(notification_ notification_)
+		{
+			// To do
+		}
 		void threadpool_()
 		{
-			std::function<void()> * task_ = nullptr;
-			std::unique_lock<std::mutex> lock_(threadpool_lock_);
-
-			while (true)
-			{
-				if (threadpool_status_.load() == threadpool_status::running)
-				{
-					if (!threadpool_queue_.empty())
-					{
-						task_ = threadpool_queue_.front();
-						threadpool_queue_.pop();
-						threadpool_ready_.fetch_sub(1);
-						lock_.unlock();
-						(*task_)();
-						lock_.lock();
-						threadpool_ready_.fetch_add(1);
-					}
-					else
-					{
-						auto wait_status_ = std::cv_status::timeout;
-						while (wait_status_ == std::cv_status::timeout && threadpool_status_.load() == threadpool_status::running)
-						{
-							wait_status_ = threadpool_alert_.wait_for(lock_, std::chrono::seconds(1));
-						}
-					}
-				}
-				else if (threadpool_status_.load() == threadpool_status::stopping)
-				{
-					auto wait_status_ = std::cv_status::timeout;
-					while (wait_status_ == std::cv_status::timeout && threadpool_status_.load() == threadpool_status::stopping)
-					{
-						wait_status_ = threadpool_alert_.wait_for(lock_, std::chrono::seconds(1));
-					}
-				}
-				else if (threadpool_status_.load() == threadpool_status::terminating)
-				{
-					lock_.unlock();
-					break;
-				}
-			}
+			// To do
+			while (true);
 		}
 	};
 }

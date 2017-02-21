@@ -141,34 +141,34 @@ int main()
 	stp::task <std::chrono::duration<double, std::nano>> task2(quicksort, &vec6);
 	stp::task <std::chrono::duration<double, std::nano>> task3(quicksort, &vec7);
 	stp::task <std::chrono::duration<double, std::nano>> task4(quicksort, &vec8);
-	threadpool.new_task(task1);
-	threadpool.new_task(task2);
-	threadpool.new_task(task3);
-	threadpool.new_task(task4);
+	threadpool.new_sync_task(task1);
+	threadpool.new_sync_task(task2);
+	threadpool.new_sync_task(task3);
+	threadpool.new_sync_task(task4);
 	
 	std::cout << "Sorting second four vectors... " << std::endl;
 	start_timer = std::chrono::high_resolution_clock::now();
 
-	threadpool.run();
+	threadpool.run_sync();
 
 	std::cout << "Sorting vector 5..." << std::endl;
-	while (!task1.is_ready());
-	elapsed5 = task1.task_result();
+	while (!task1.is_done());
+	elapsed5 = task1.result();
 	std::cout << "Elapsed: " << elapsed5.count() << "ns" << std::endl;
 
 	std::cout << "Sorting vector 6..." << std::endl;
-	while (!task2.is_ready());
-	elapsed6 = task2.task_result();
+	while (!task2.is_done());
+	elapsed6 = task2.result();
 	std::cout << "Elapsed: " << elapsed6.count() << "ns" << std::endl;
 
 	std::cout << "Sorting vector 7..." << std::endl;
-	while (!task3.is_ready());
-	elapsed7 = task3.task_result();
+	while (!task3.is_done());
+	elapsed7 = task3.result();
 	std::cout << "Elapsed: " << elapsed7.count() << "ns" << std::endl;
 
 	std::cout << "Sorting vector 8..." << std::endl;
-	while (!task4.is_ready());
-	elapsed8 = task4.task_result();
+	while (!task4.is_done());
+	elapsed8 = task4.result();
 	std::cout << "Elapsed: " << elapsed8.count() << "ns" << std::endl;
 
 	stop_timer = std::chrono::high_resolution_clock::now();
