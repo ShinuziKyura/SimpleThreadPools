@@ -136,39 +136,45 @@ int main()
 
 	// Sorting second four vectors (with concurrency)
 
-	stp::threadpool threadpool(0);
-	stp::task <std::chrono::duration<double, std::nano>> task1(quicksort, &vec5);
-	stp::task <std::chrono::duration<double, std::nano>> task2(quicksort, &vec6);
-	stp::task <std::chrono::duration<double, std::nano>> task3(quicksort, &vec7);
-	stp::task <std::chrono::duration<double, std::nano>> task4(quicksort, &vec8);
-	threadpool.new_sync_task(task1);
-	threadpool.new_sync_task(task2);
-	threadpool.new_sync_task(task3);
-	threadpool.new_sync_task(task4);
+	stp::threadpool threadpool(1);
+	stp::task <std::chrono::duration<double, std::nano>> task_1(quicksort, &vec5);
+	stp::task <std::chrono::duration<double, std::nano>> task_2(quicksort, &vec6);
+	stp::task <std::chrono::duration<double, std::nano>> task_3(quicksort, &vec7);
+	stp::task <std::chrono::duration<double, std::nano>> task_4(quicksort, &vec8);
+
+//	threadpool.run(); // Current tests
+	threadpool.new_sync_task(task_1);
+	threadpool.new_sync_task(task_2);
+	threadpool.new_sync_task(task_3);
+	threadpool.new_sync_task(task_4);
 	
+	threadpool.stop();
+	threadpool.run_sync();
+	threadpool.run();
+
 	std::cout << "Sorting second four vectors... " << std::endl;
 	start_timer = std::chrono::high_resolution_clock::now();
 
 	threadpool.run_sync();
 
 	std::cout << "Sorting vector 5..." << std::endl;
-	while (!task1.is_done());
-	elapsed5 = task1.result();
+	while (!task_1.is_done());
+	elapsed5 = task_1.result();
 	std::cout << "Elapsed: " << elapsed5.count() << "ns" << std::endl;
 
 	std::cout << "Sorting vector 6..." << std::endl;
-	while (!task2.is_done());
-	elapsed6 = task2.result();
+	while (!task_2.is_done());
+	elapsed6 = task_2.result();
 	std::cout << "Elapsed: " << elapsed6.count() << "ns" << std::endl;
 
 	std::cout << "Sorting vector 7..." << std::endl;
-	while (!task3.is_done());
-	elapsed7 = task3.result();
+	while (!task_3.is_done());
+	elapsed7 = task_3.result();
 	std::cout << "Elapsed: " << elapsed7.count() << "ns" << std::endl;
 
 	std::cout << "Sorting vector 8..." << std::endl;
-	while (!task4.is_done());
-	elapsed8 = task4.result();
+	while (!task_4.is_done());
+	elapsed8 = task_4.result();
 	std::cout << "Elapsed: " << elapsed8.count() << "ns" << std::endl;
 
 	stop_timer = std::chrono::high_resolution_clock::now();
@@ -210,7 +216,7 @@ int main()
 	unsorted.close();
 	sorted.close();
 */
-	threadpool.stop();
-	while (threadpool.is_running());
+	threadpool.finalize();
+	while (!threadpool.is_waiting());
 	return 0;
 }
