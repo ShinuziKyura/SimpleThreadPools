@@ -14,8 +14,6 @@
 
 namespace stp
 {
-	typedef void NullType;
-
 	template <typename ReturnType>
 	class task
 	{
@@ -38,7 +36,7 @@ namespace stp
 		task<ReturnType>(FuncType func, ArgType ... args)
 		{
 			package_ = std::packaged_task<decltype(func(args ...))()>(std::bind(func, args ...));
-			task_ = std::function<NullType()>([this]
+			task_ = std::function<void()>([this]
 			{
 				package_();
 			});
@@ -51,7 +49,7 @@ namespace stp
 		~task<ReturnType>() = default;
 	private:
 		std::packaged_task<ReturnType()> package_;
-		std::function<NullType()> task_;
+		std::function<void()> task_;
 		std::future<ReturnType> task_result_;
 
 		friend class threadpool;
@@ -67,7 +65,7 @@ namespace stp
 			{
 				std::unique_lock<std::mutex> lock(thread_lock_);
 				task_queue_.push(std::make_pair(&task.task_, true));
-				notification_queue_.push(notification(1, message_t::new_task)); // 0 allows for no conflict in notify_all functions // nvm
+				notification_queue_.push(notification(1, message_t::new_task, this));
 				lock.unlock();
 			}
 			if (thread_state_ == state_t::running)
@@ -82,7 +80,7 @@ namespace stp
 			{
 				std::unique_lock<std::mutex> lock(thread_lock_);
 				task_queue_.push(std::make_pair(&task.task_, false));
-				notification_queue_.push(notification(1, message_t::new_sync_task));
+				notification_queue_.push(notification(1, message_t::new_sync_task, this));
 				lock.unlock();
 			}
 			if (thread_state_ == state_t::running)
@@ -95,13 +93,13 @@ namespace stp
 			if (thread_state_ == state_t::running)
 			{
 				std::unique_lock<std::mutex> lock(thread_lock_);
-				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_count_)
+				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_number_)
 				{
 					lock.unlock();
-					std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Or smth else
+					std::this_thread::sleep_for(std::chrono::milliseconds(1));
 					lock.lock();
 				}
-				notification_queue_.push(notification(thread_count_, message_t::start_sync_task));
+				notification_queue_.push(notification(thread_number_, message_t::start_sync_task, this));
 				lock.unlock();
 				thread_alert_.notify_all();
 			}
@@ -112,13 +110,13 @@ namespace stp
 			{
 				thread_state_ = state_t::running;
 				std::unique_lock<std::mutex> lock(thread_lock_);
-				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_count_)
+				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_number_)
 				{
 					lock.unlock();
-					std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Or smth else
+					std::this_thread::sleep_for(std::chrono::milliseconds(1));
 					lock.lock();
 				}
-				notification_queue_.push(notification(thread_count_, message_t::run));
+				notification_queue_.push(notification(thread_number_, message_t::run, this));
 				lock.unlock();
 				thread_alert_.notify_all();
 			}
@@ -129,13 +127,13 @@ namespace stp
 			{
 				thread_state_ = state_t::waiting;
 				std::unique_lock<std::mutex> lock(thread_lock_);
-				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_count_)
+				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_number_)
 				{
 					lock.unlock();
 					std::this_thread::sleep_for(std::chrono::milliseconds(1));
 					lock.lock();
 				}
-				notification_queue_.push(notification(thread_count_, message_t::stop));
+				notification_queue_.push(notification(thread_number_, message_t::stop, this));
 				lock.unlock();
 				thread_alert_.notify_all();
 			}
@@ -146,16 +144,20 @@ namespace stp
 			{
 				thread_state_ = state_t::finalizing;
 				std::unique_lock<std::mutex> lock(thread_lock_);
-				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_count_)
+				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_number_)
 				{
 					lock.unlock();
 					std::this_thread::sleep_for(std::chrono::milliseconds(1));
 					lock.lock();
 				}
-				notification_queue_.push(notification(1, message_t::finalize)); // Maybe 1, cause of how finalize works
+				notification_queue_.push(notification(thread_number_, message_t::finalize, this));
 				lock.unlock();
 				thread_alert_.notify_one();
 			}
+		}
+		int size()
+		{
+			return static_cast<int const>(thread_number_);
 		}
 		bool is_active()
 		{
@@ -166,11 +168,11 @@ namespace stp
 		}
 
 		threadpool() = delete;
-		threadpool(uint16_t thread_count) :
-			thread_count_(thread_count == 0 ? std::thread::hardware_concurrency() : thread_count)
+		threadpool(uint8_t thread_number) :
+			thread_number_(thread_number == 0 ? std::thread::hardware_concurrency() : thread_number)
 		{
-			thread_array_ = new std::thread[thread_count_];
-			for (uint16_t i = 0; i < thread_count_; ++i)
+			thread_array_ = new std::thread[thread_number_];
+			for (uint8_t i = 0; i < thread_number_; ++i)
 			{
 				thread_array_[i] = std::thread(&threadpool::threadpool_, this);
 			}
@@ -184,11 +186,11 @@ namespace stp
 		{
 			thread_state_ = state_t::terminating;
 			std::unique_lock<std::mutex> lock(thread_lock_);
-			notification_queue_.push(notification(thread_count_, message_t::terminate));
+			notification_queue_.push(notification(thread_number_, message_t::terminate, this));
 			lock.unlock();
 			thread_alert_.notify_all();
 
-			for (uint16_t i = 0; i < thread_count_; ++i)
+			for (uint8_t i = 0; i < thread_number_; ++i)
 			{
 				thread_array_[i].join();
 			}
@@ -216,14 +218,11 @@ namespace stp
 		};
 		struct notification
 		{
-		private:
-			static uint64_t base_id;
-		public:
 			uint64_t id;
-			uint16_t priority = 0;
+			uint8_t priority = 0;
 			message_t message;
 			mutable uint16_t notified;
-			notification(uint16_t notified, message_t message) : id(++base_id), message(message), notified(notified)
+			notification(uint8_t notified, message_t message, threadpool * threadpool) : id(++threadpool->notification_id_), message(message), notified(notified)
 			{
 				switch (message)
 				{
@@ -237,12 +236,12 @@ namespace stp
 					case message_t::new_task:
 					case message_t::new_sync_task:
 						++priority;
-					case message_t::start_sync_task: // Special priority
+					case message_t::start_sync_task:
 						break;
 				}
 				if (id == 0)
 				{
-					id = ++base_id;
+					id = ++threadpool->notification_id_;
 				}
 			}
 		};
@@ -273,10 +272,10 @@ namespace stp
 		std::thread * thread_monitor_;
 		std::mutex thread_lock_;
 		std::condition_variable thread_alert_;
-
 		state_t thread_state_ = state_t::waiting;
-		int16_t thread_active_ = 0;
-		uint16_t const thread_count_;
+		int8_t thread_active_ = 0;
+		uint8_t const thread_number_;
+		uint64_t notification_id_ = 0;
 
 		void threadpool_()
 		{
@@ -324,7 +323,7 @@ namespace stp
 								}
 							}
 							break;
-						case message_t::run: // Only relevant while state_t == waiting
+						case message_t::run:
 							if (state == state_t::waiting)
 							{
 								state = state_t::running;
@@ -406,7 +405,7 @@ namespace stp
 		void threadpool_monitor_()
 		{
 			std::unique_lock<std::mutex> lock(thread_lock_, std::defer_lock);
-			while (lock.lock(), -thread_active_ != thread_count_)
+			while (lock.lock(), -thread_active_ != thread_number_)
 			{
 				lock.unlock();
 				std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -415,8 +414,6 @@ namespace stp
 			lock.unlock();
 		}
 	};
-
-	uint64_t threadpool::notification::base_id = 0;
 }
 
 #endif//SIMPLE_THREAD_POOLS_H_
