@@ -136,26 +136,22 @@ int main()
 
 	// Sorting second four vectors (with concurrency)
 
-	stp::threadpool threadpool(1);
+	stp::threadpool threadpool(0);
 	stp::task <std::chrono::duration<double, std::nano>> task_1(quicksort, &vec5);
 	stp::task <std::chrono::duration<double, std::nano>> task_2(quicksort, &vec6);
 	stp::task <std::chrono::duration<double, std::nano>> task_3(quicksort, &vec7);
 	stp::task <std::chrono::duration<double, std::nano>> task_4(quicksort, &vec8);
 
-//	threadpool.run(); // Current tests
+	threadpool.run(); // Current tests
 	threadpool.new_sync_task(task_1);
 	threadpool.new_sync_task(task_2);
 	threadpool.new_sync_task(task_3);
 	threadpool.new_sync_task(task_4);
-	
-	threadpool.stop();
-	threadpool.run_sync();
-	threadpool.run();
 
 	std::cout << "Sorting second four vectors... " << std::endl;
 	start_timer = std::chrono::high_resolution_clock::now();
 
-	threadpool.run_sync();
+	threadpool.start_sync_task();
 
 	std::cout << "Sorting vector 5..." << std::endl;
 	while (!task_1.is_done());
@@ -217,6 +213,6 @@ int main()
 	sorted.close();
 */
 	threadpool.finalize();
-	while (!threadpool.is_waiting());
+	while (threadpool.is_active());
 	return 0;
 }
