@@ -1,16 +1,8 @@
 #ifndef SIMPLE_THREAD_POOLS_H_
 #define SIMPLE_THREAD_POOLS_H_
 
-#include <cstdint>
-#include <chrono>
-#include <thread>
 #include <future>
-#include <mutex>
-#include <condition_variable>
-#include <functional>
-#include <utility>
 #include <queue>
-#include <deque>
 
 namespace stp
 {
@@ -35,12 +27,12 @@ namespace stp
 		template <typename FuncType, typename ... ArgType>
 		task<ReturnType>(FuncType func, ArgType ... args)
 		{
-			package_ = std::packaged_task<decltype(func(args ...))()>(std::bind(func, args ...));
-			task_ = std::function<void()>([this]
+			auto package = std::make_shared<std::packaged_task<decltype(func(args ...))()>>(std::bind(func, args ...));
+			task_ = std::function<void()>([package]
 			{
-				package_();
+				(*package)();
 			});
-			task_result_ = package_.get_future();
+			task_result_ = package->get_future();
 		}
 		task<ReturnType>(task<ReturnType> const &) = delete;
 		task<ReturnType> & operator=(task<ReturnType> const &) = delete;
@@ -48,7 +40,6 @@ namespace stp
 		task<ReturnType> & operator=(task<ReturnType> &&) = default;
 		~task<ReturnType>() = default;
 	private:
-		std::packaged_task<ReturnType()> package_;
 		std::function<void()> task_;
 		std::future<ReturnType> task_result_;
 
@@ -140,7 +131,7 @@ namespace stp
 		}
 		void finalize()
 		{
-			if (thread_state_ != state_t::finalizing || thread_state_ != state_t::terminating)
+			if (thread_state_ != state_t::finalizing)
 			{
 				thread_state_ = state_t::finalizing;
 				std::unique_lock<std::mutex> lock(thread_lock_);
@@ -155,16 +146,16 @@ namespace stp
 				thread_alert_.notify_one();
 			}
 		}
-		int size()
-		{
-			return static_cast<int const>(thread_number_);
-		}
 		bool is_active()
 		{
 			std::unique_lock<std::mutex> lock(thread_lock_);
 			bool is_active = thread_active_ > (thread_state_ == state_t::terminating ? -8 : 0);
 			lock.unlock();
 			return is_active;
+		}
+		int size()
+		{
+			return static_cast<int const>(thread_number_);
 		}
 
 		threadpool() = delete;
@@ -177,6 +168,7 @@ namespace stp
 				thread_array_[i] = std::thread(&threadpool::threadpool_, this);
 			}
 			thread_monitor_ = new std::thread(&threadpool::threadpool_monitor_, this);
+
 		}
 		threadpool(threadpool const &) = delete;
 		threadpool & operator=(threadpool const &) = delete;
@@ -189,13 +181,12 @@ namespace stp
 			notification_queue_.push(notification(thread_number_, message_t::terminate, this));
 			lock.unlock();
 			thread_alert_.notify_all();
-
 			for (uint8_t i = 0; i < thread_number_; ++i)
 			{
 				thread_array_[i].join();
 			}
-			thread_monitor_->join();
 			delete[] thread_array_;
+			thread_monitor_->join();
 			delete thread_monitor_;
 		}
 	private:
@@ -216,6 +207,7 @@ namespace stp
 			finalize,
 			terminate
 		};
+
 		struct notification
 		{
 			uint64_t id;
@@ -250,18 +242,17 @@ namespace stp
 			notification_comparator() = default;
 			bool operator()(notification const & n1, notification const & n2) const
 			{
-				if (n1.priority == 0 || n2.priority == 0)
+				if (n1.priority == 0 || n2.priority == 0 || n1.priority == n2.priority)
 				{
 					return n1.id > n2.id;
 				}
+				else if (n1.priority < n2.priority)
+				{
+					return true;
+				}
 				else
 				{
-					if (n1.priority < n2.priority)
-						return true;
-					else if (n1.priority == n2.priority)
-						return n1.id > n2.id;
-					else
-						return false;
+					return false;
 				}
 			}
 		};
@@ -272,10 +263,10 @@ namespace stp
 		std::thread * thread_monitor_;
 		std::mutex thread_lock_;
 		std::condition_variable thread_alert_;
+		uint64_t notification_id_ = 0;
 		state_t thread_state_ = state_t::waiting;
 		int8_t thread_active_ = 0;
 		uint8_t const thread_number_;
-		uint64_t notification_id_ = 0;
 
 		void threadpool_()
 		{
@@ -365,18 +356,11 @@ namespace stp
 				}
 				else
 				{
-					if (notification_queue_.empty() || notification_queue_.top().message != message_t::terminate)
+					if ((notification_queue_.empty() || notification_queue_.top().message != message_t::terminate) && !task_queue_.empty())
 					{
-						if (!task_queue_.empty())
-						{
-							task = task_queue_.front();
-							task_queue_.pop();
-							task.second = true;
-						}
-						else
-						{
-							state = state_t::terminating;
-						}
+						task = task_queue_.front();
+						task_queue_.pop();
+						task.second = true;
 					}
 					else
 					{
@@ -408,8 +392,8 @@ namespace stp
 			while (lock.lock(), -thread_active_ != thread_number_)
 			{
 				lock.unlock();
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 				thread_alert_.notify_all();
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
 			lock.unlock();
 		}
