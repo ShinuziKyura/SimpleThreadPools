@@ -178,7 +178,7 @@ namespace stp
 		{
 			thread_state_ = state_t::terminating;
 			std::unique_lock<std::mutex> lock(thread_lock_);
-			notification_queue_.push(notification(thread_number_, message_t::terminate, this));
+			notification_queue_.push(notification(0, message_t::terminate, this));
 			lock.unlock();
 			thread_alert_.notify_all();
 			for (uint8_t i = 0; i < thread_number_; ++i)
@@ -277,65 +277,33 @@ namespace stp
 
 			while (true)
 			{
-				if (state != state_t::finalizing)
+				thread_alert_.wait(lock, [this, &last_id]
 				{
-					thread_alert_.wait(lock, [this, &last_id]
+					if (!notification_queue_.empty())
 					{
-						if (!notification_queue_.empty())
-							return notification_queue_.top().id != last_id;
-						return false;
-					});
-					last_id = notification_queue_.top().id;
+						return notification_queue_.top().id != last_id;
+					}
+					return false;
+				});
+				last_id = notification_queue_.top().id;
 
-					switch (notification_queue_.top().message)
-					{
-						case message_t::new_task:
-						case message_t::new_sync_task:
-							if (!task.first)
+				switch (notification_queue_.top().message)
+				{
+					case message_t::new_task:
+					case message_t::new_sync_task:
+						if (!task.first)
+						{
+							task = task_queue_.front();
+							task_queue_.pop();
+							if (--notification_queue_.top().notified == 0)
 							{
-								task = task_queue_.front();
-								task_queue_.pop();
-								if (--notification_queue_.top().notified == 0)
-								{
-									notification_queue_.pop();
-								}
+								notification_queue_.pop();
 							}
-							break;
-						case message_t::start_sync_task:
-							if (state == state_t::running)
-							{
-								if (task.first)
-								{
-									task.second = true;
-								}
-								if (--notification_queue_.top().notified == 0)
-								{
-									notification_queue_.pop();
-								}
-							}
-							break;
-						case message_t::run:
-							if (state == state_t::waiting)
-							{
-								state = state_t::running;
-								if (--notification_queue_.top().notified == 0)
-								{
-									notification_queue_.pop();
-								}
-							}
-							break;
-						case message_t::stop:
-							if (state == state_t::running)
-							{
-								state = state_t::waiting;
-								if (--notification_queue_.top().notified == 0)
-								{
-									notification_queue_.pop();
-								}
-							}
-							break;
-						case message_t::finalize:
-							state = state_t::finalizing;
+						}
+						break;
+					case message_t::start_sync_task:
+						if (state == state_t::running)
+						{
 							if (task.first)
 							{
 								task.second = true;
@@ -344,28 +312,63 @@ namespace stp
 							{
 								notification_queue_.pop();
 							}
-							break;
-						case message_t::terminate:
-							state = state_t::terminating;
+						}
+						break;
+					case message_t::run:
+						if (state == state_t::waiting)
+						{
+							state = state_t::running;
 							if (--notification_queue_.top().notified == 0)
 							{
 								notification_queue_.pop();
 							}
-							break;
-					}
-				}
-				else
-				{
-					if ((notification_queue_.empty() || notification_queue_.top().message != message_t::terminate) && !task_queue_.empty())
-					{
-						task = task_queue_.front();
-						task_queue_.pop();
-						task.second = true;
-					}
-					else
-					{
-						state = state_t::terminating;
-					}
+						}
+						break;
+					case message_t::stop:
+						if (state == state_t::running)
+						{
+							state = state_t::waiting;
+							if (--notification_queue_.top().notified == 0)
+							{
+								notification_queue_.pop();
+							}
+						}
+						break;
+					case message_t::finalize:
+						if (--notification_queue_.top().notified == 0)
+						{
+							notification_queue_.pop();
+						}
+						if (task.first)
+						{
+							++thread_active_;
+							lock.unlock();
+							(*task.first)();
+							lock.lock();
+							--thread_active_;
+						}
+						while ((notification_queue_.empty() || notification_queue_.top().message != message_t::terminate) && !task_queue_.empty())
+						{
+							task = task_queue_.front();
+							task_queue_.pop();
+
+							++thread_active_;
+							lock.unlock();
+							(*task.first)();
+							lock.lock();
+							--thread_active_;
+						}
+						--thread_active_;
+						lock.unlock();
+						return;
+					case message_t::terminate:
+						if (--notification_queue_.top().notified == 0)
+						{
+							notification_queue_.pop();
+						}
+						--thread_active_;
+						lock.unlock();
+						return;
 				}
 
 				if (task.first && task.second)
@@ -377,14 +380,7 @@ namespace stp
 					lock.lock();
 					--thread_active_;
 				}
-
-				if (state == state_t::terminating)
-				{
-					--thread_active_;
-					break;
-				}
 			}
-			lock.unlock();
 		}
 		void threadpool_monitor_()
 		{
