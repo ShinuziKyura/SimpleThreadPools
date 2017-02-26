@@ -38,10 +38,11 @@ namespace stp
 		task<ReturnType> & operator=(task<ReturnType> const &) = delete;
 		task<ReturnType>(task<ReturnType> &&) = default;
 		task<ReturnType> & operator=(task<ReturnType> &&) = default;
-		~task<ReturnType>() = default;
 	private:
 		std::function<void()> task_;
 		std::future<ReturnType> task_result_;
+
+		~task<ReturnType>() = default;
 
 		friend class threadpool;
 	};
@@ -174,28 +175,12 @@ namespace stp
 		threadpool & operator=(threadpool const &) = delete;
 		threadpool(threadpool &&) = delete;
 		threadpool & operator=(threadpool &&) = delete;
-		~threadpool()
-		{
-			thread_state_ = state_t::terminating;
-			std::unique_lock<std::mutex> lock(thread_lock_);
-			notification_queue_.push(notification(0, message_t::terminate, this));
-			lock.unlock();
-			thread_alert_.notify_all();
-			for (uint8_t i = 0; i < thread_number_; ++i)
-			{
-				thread_array_[i].join();
-			}
-			delete[] thread_array_;
-			thread_monitor_->join();
-			delete thread_monitor_;
-		}
 	private:
 		enum class state_t
 		{
 			running,
 			waiting,
-			finalizing,
-			terminating
+			finalizing
 		};
 		enum class message_t
 		{
@@ -267,6 +252,21 @@ namespace stp
 		state_t thread_state_ = state_t::waiting;
 		int8_t thread_active_ = 0;
 		uint8_t const thread_number_;
+
+		~threadpool()
+		{
+			std::unique_lock<std::mutex> lock(thread_lock_);
+			notification_queue_.push(notification(0, message_t::terminate, this));
+			lock.unlock();
+			thread_alert_.notify_all();
+			for (uint8_t i = 0; i < thread_number_; ++i)
+			{
+				thread_array_[i].join();
+			}
+			delete[] thread_array_;
+			thread_monitor_->join();
+			delete thread_monitor_;
+		}
 
 		void threadpool_()
 		{
