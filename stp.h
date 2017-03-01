@@ -231,13 +231,9 @@ namespace stp
 				{
 					return n1.id > n2.id;
 				}
-				else if (n1.priority < n2.priority)
-				{
-					return true;
-				}
 				else
 				{
-					return false;
+					return n1.priority < n2.priority;
 				}
 			}
 		};
