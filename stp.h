@@ -155,10 +155,7 @@ namespace stp
 		}
 		int size()
 		{
-			std::unique_lock<std::mutex> lock(thread_lock_);
-			int const size = static_cast<int const>(thread_number_);
-			lock.unlock();
-			return size;
+			return static_cast<int const>(thread_number_);
 		}
 
 		threadpool() = delete;
@@ -260,7 +257,7 @@ namespace stp
 		std::thread * thread_monitor_;
 		std::mutex thread_lock_;
 		std::condition_variable thread_alert_;
-		state_t thread_state_ = state_t::waiting;
+		state_t thread_state_ = state_t::waiting; // Should the threadpool sync with this var?
 		int8_t thread_active_ = 0;
 		uint8_t const thread_number_;
 		uint64_t notification_id_ = 0;
@@ -355,14 +352,7 @@ namespace stp
 							lock.lock();
 							--thread_active_;
 						}
-						--thread_active_;
-						lock.unlock();
-						return;
 					case message_t::terminate:
-						if (--notification_queue_.top().notified == 0)
-						{
-							notification_queue_.pop();
-						}
 						--thread_active_;
 						lock.unlock();
 						return;
@@ -379,7 +369,7 @@ namespace stp
 				}
 			}
 		}
-		void threadpool_monitor_()
+		void threadpool_monitor_() // Make it more robust
 		{
 			std::unique_lock<std::mutex> lock(thread_lock_, std::defer_lock);
 			while (lock.lock(), -thread_active_ != thread_number_)
