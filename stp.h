@@ -38,11 +38,10 @@ namespace stp
 		task<ReturnType> & operator=(task<ReturnType> const &) = delete;
 		task<ReturnType>(task<ReturnType> &&) = default;
 		task<ReturnType> & operator=(task<ReturnType> &&) = default;
+		~task<ReturnType>() = default;
 	private:
 		std::function<void()> task_;
 		std::future<ReturnType> task_result_;
-
-		~task<ReturnType>() = default;
 
 		friend class threadpool;
 	};
@@ -150,13 +149,16 @@ namespace stp
 		bool is_active()
 		{
 			std::unique_lock<std::mutex> lock(thread_lock_);
-			bool is_active = thread_active_ > (thread_state_ == state_t::terminating ? -8 : 0);
+			bool is_active = thread_active_ > (thread_state_ == state_t::finalizing ? -8 : 0);
 			lock.unlock();
 			return is_active;
 		}
 		int size()
 		{
-			return static_cast<int const>(thread_number_);
+			std::unique_lock<std::mutex> lock(thread_lock_);
+			int const size = static_cast<int const>(thread_number_);
+			lock.unlock();
+			return size;
 		}
 
 		threadpool() = delete;
@@ -169,12 +171,26 @@ namespace stp
 				thread_array_[i] = std::thread(&threadpool::threadpool_, this);
 			}
 			thread_monitor_ = new std::thread(&threadpool::threadpool_monitor_, this);
-
 		}
 		threadpool(threadpool const &) = delete;
 		threadpool & operator=(threadpool const &) = delete;
 		threadpool(threadpool &&) = delete;
 		threadpool & operator=(threadpool &&) = delete;
+		~threadpool()
+		{
+			thread_state_ = state_t::finalizing;
+			std::unique_lock<std::mutex> lock(thread_lock_);
+			notification_queue_.push(notification(0, message_t::terminate, this));
+			lock.unlock();
+			thread_alert_.notify_all();
+			for (uint8_t i = 0; i < thread_number_; ++i)
+			{
+				thread_array_[i].join();
+			}
+			delete[] thread_array_;
+			thread_monitor_->join();
+			delete thread_monitor_;
+		}
 	private:
 		enum class state_t
 		{
@@ -244,25 +260,10 @@ namespace stp
 		std::thread * thread_monitor_;
 		std::mutex thread_lock_;
 		std::condition_variable thread_alert_;
-		uint64_t notification_id_ = 0;
 		state_t thread_state_ = state_t::waiting;
 		int8_t thread_active_ = 0;
 		uint8_t const thread_number_;
-
-		~threadpool()
-		{
-			std::unique_lock<std::mutex> lock(thread_lock_);
-			notification_queue_.push(notification(0, message_t::terminate, this));
-			lock.unlock();
-			thread_alert_.notify_all();
-			for (uint8_t i = 0; i < thread_number_; ++i)
-			{
-				thread_array_[i].join();
-			}
-			delete[] thread_array_;
-			thread_monitor_->join();
-			delete thread_monitor_;
-		}
+		uint64_t notification_id_ = 0;
 
 		void threadpool_()
 		{
