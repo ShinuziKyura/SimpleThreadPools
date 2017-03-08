@@ -12,15 +12,15 @@ namespace stp
 	public:
 		ReturnType result()
 		{
-			if (task_result_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+			if (result_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
 			{
 				throw std::logic_error("Future not ready");
 			}
-			return task_result_.get();
+			return result_.get();
 		}
 		bool is_done()
 		{
-			return task_result_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+			return result_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 		}
 
 		task<ReturnType>() = delete;
@@ -32,7 +32,7 @@ namespace stp
 			{
 				(*package)();
 			});
-			task_result_ = package->get_future();
+			result_ = package->get_future();
 		}
 		task<ReturnType>(task<ReturnType> const &) = delete;
 		task<ReturnType> & operator=(task<ReturnType> const &) = delete;
@@ -41,7 +41,7 @@ namespace stp
 		~task<ReturnType>() = default;
 	private:
 		std::function<void()> task_;
-		std::future<ReturnType> task_result_;
+		std::future<ReturnType> result_;
 
 		friend class threadpool;
 	};
@@ -162,12 +162,12 @@ namespace stp
 		threadpool(uint8_t thread_number) :
 			thread_number_(thread_number == 0 ? std::thread::hardware_concurrency() : thread_number)
 		{
-			thread_array_ = new std::thread[thread_number_];
+			thread_pool_ = new std::thread[thread_number_];
 			for (uint8_t i = 0; i < thread_number_; ++i)
 			{
-				thread_array_[i] = std::thread(&threadpool::threadpool_, this);
+				thread_pool_[i] = std::thread(&threadpool::threadpool_, this);
 			}
-			thread_monitor_ = new std::thread(&threadpool::threadpool_monitor_, this);
+			thread_monitor_ = new std::thread(&threadpool::threadmonitor_, this);
 		}
 		threadpool(threadpool const &) = delete;
 		threadpool & operator=(threadpool const &) = delete;
@@ -182,9 +182,9 @@ namespace stp
 			thread_alert_.notify_all();
 			for (uint8_t i = 0; i < thread_number_; ++i)
 			{
-				thread_array_[i].join();
+				thread_pool_[i].join();
 			}
-			delete[] thread_array_;
+			delete[] thread_pool_;
 			thread_monitor_->join();
 			delete thread_monitor_;
 		}
@@ -253,7 +253,7 @@ namespace stp
 
 		std::queue<std::pair<std::function<void()> *, bool>> task_queue_;
 		std::priority_queue<notification, std::deque<notification>, notification_comparator> notification_queue_;
-		std::thread * thread_array_;
+		std::thread * thread_pool_;
 		std::thread * thread_monitor_;
 		std::mutex thread_lock_;
 		std::condition_variable thread_alert_;
@@ -369,7 +369,7 @@ namespace stp
 				}
 			}
 		}
-		void threadpool_monitor_() // Make it more robust
+		void threadmonitor_() // Make it more robust
 		{
 			std::unique_lock<std::mutex> lock(thread_lock_, std::defer_lock);
 			while (lock.lock(), -thread_active_ != thread_number_)
