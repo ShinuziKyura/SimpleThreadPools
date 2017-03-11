@@ -25,14 +25,13 @@ namespace stp
 
 		task<ReturnType>() = delete;
 		template <typename FuncType, typename ... ArgType>
-		task<ReturnType>(FuncType func, ArgType ... args)
+		task<ReturnType>(FuncType func, ArgType ... args) : package_(std::bind(func, args ...))
 		{
-			auto package = std::make_shared<std::packaged_task<decltype(func(args ...))()>>(std::bind(func, args ...));
-			task_ = std::function<void()>([package]
+			task_ = std::function<void()>([this]
 			{
-				(*package)();
+				package_();
 			});
-			result_ = package->get_future();
+			result_ = package_.get_future();
 		}
 		task<ReturnType>(task<ReturnType> const &) = delete;
 		task<ReturnType> & operator=(task<ReturnType> const &) = delete;
@@ -40,6 +39,7 @@ namespace stp
 		task<ReturnType> & operator=(task<ReturnType> &&) = default;
 		~task<ReturnType>() = default;
 	private:
+		std::packaged_task<ReturnType()> package_;
 		std::function<void()> task_;
 		std::future<ReturnType> result_;
 
@@ -84,13 +84,13 @@ namespace stp
 			if (thread_state_ == state_t::running)
 			{
 				std::unique_lock<std::mutex> lock(thread_lock_);
-				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_number_)
+				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_amount_) // Might change these while expressions, something with try_lock()?
 				{
 					lock.unlock();
 					std::this_thread::sleep_for(std::chrono::milliseconds(1));
 					lock.lock();
 				}
-				notification_queue_.push(notification(thread_number_, message_t::start_sync_task, this));
+				notification_queue_.push(notification(thread_amount_, message_t::start_sync_task, this));
 				lock.unlock();
 				thread_alert_.notify_all();
 			}
@@ -101,13 +101,13 @@ namespace stp
 			{
 				thread_state_ = state_t::running;
 				std::unique_lock<std::mutex> lock(thread_lock_);
-				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_number_)
+				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_amount_)
 				{
 					lock.unlock();
 					std::this_thread::sleep_for(std::chrono::milliseconds(1));
 					lock.lock();
 				}
-				notification_queue_.push(notification(thread_number_, message_t::run, this));
+				notification_queue_.push(notification(thread_amount_, message_t::run, this));
 				lock.unlock();
 				thread_alert_.notify_all();
 			}
@@ -118,56 +118,55 @@ namespace stp
 			{
 				thread_state_ = state_t::waiting;
 				std::unique_lock<std::mutex> lock(thread_lock_);
-				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_number_)
+				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_amount_)
 				{
 					lock.unlock();
 					std::this_thread::sleep_for(std::chrono::milliseconds(1));
 					lock.lock();
 				}
-				notification_queue_.push(notification(thread_number_, message_t::stop, this));
+				notification_queue_.push(notification(thread_amount_, message_t::stop, this));
 				lock.unlock();
 				thread_alert_.notify_all();
 			}
 		}
 		void finalize()
 		{
-			if (thread_state_ != state_t::finalizing)
+			if (thread_state_ != state_t::terminating)
 			{
-				thread_state_ = state_t::finalizing;
+				thread_state_ = state_t::terminating;
 				std::unique_lock<std::mutex> lock(thread_lock_);
-				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_number_)
+				while (!notification_queue_.empty() && notification_queue_.top().notified != thread_amount_)
 				{
 					lock.unlock();
 					std::this_thread::sleep_for(std::chrono::milliseconds(1));
 					lock.lock();
 				}
-				notification_queue_.push(notification(thread_number_, message_t::finalize, this));
+				notification_queue_.push(notification(thread_amount_, message_t::finalize, this));
 				lock.unlock();
-				thread_alert_.notify_one();
+				thread_alert_.notify_all();
 			}
 		}
 		bool is_active()
 		{
 			std::unique_lock<std::mutex> lock(thread_lock_);
-			bool is_active = thread_active_ > (thread_state_ == state_t::finalizing ? -8 : 0);
+			bool is_active = thread_active_ > (thread_state_ == state_t::terminating ? -8 : 0);
 			lock.unlock();
 			return is_active;
 		}
 		int size()
 		{
-			return static_cast<int const>(thread_number_);
+			return static_cast<int const>(thread_amount_);
 		}
 
 		threadpool() = delete;
-		threadpool(uint8_t thread_number) :
-			thread_number_(thread_number == 0 ? std::thread::hardware_concurrency() : thread_number)
+		threadpool(uint16_t thread_number) :
+			thread_amount_(thread_number == 0 ? std::thread::hardware_concurrency() : thread_number)
 		{
-			thread_pool_ = new std::thread[thread_number_];
-			for (uint8_t i = 0; i < thread_number_; ++i)
+			thread_array_ = new std::thread[thread_amount_];
+			for (uint16_t i = 0; i < thread_amount_; ++i)
 			{
-				thread_pool_[i] = std::thread(&threadpool::threadpool_, this);
+				thread_array_[i] = std::thread(&threadpool::threadpool_, this);
 			}
-			thread_monitor_ = new std::thread(&threadpool::threadmonitor_, this);
 		}
 		threadpool(threadpool const &) = delete;
 		threadpool & operator=(threadpool const &) = delete;
@@ -175,25 +174,25 @@ namespace stp
 		threadpool & operator=(threadpool &&) = delete;
 		~threadpool()
 		{
-			thread_state_ = state_t::finalizing;
+			thread_state_ = state_t::terminating;
+
 			std::unique_lock<std::mutex> lock(thread_lock_);
 			notification_queue_.push(notification(0, message_t::terminate, this));
 			lock.unlock();
 			thread_alert_.notify_all();
-			for (uint8_t i = 0; i < thread_number_; ++i)
+
+			for (uint16_t i = 0; i < thread_amount_; ++i)
 			{
-				thread_pool_[i].join();
+				thread_array_[i].join();
 			}
-			delete[] thread_pool_;
-			thread_monitor_->join();
-			delete thread_monitor_;
+			delete[] thread_array_;
 		}
 	private:
 		enum class state_t
 		{
 			running,
 			waiting,
-			finalizing
+			terminating
 		};
 		enum class message_t
 		{
@@ -209,10 +208,11 @@ namespace stp
 		struct notification
 		{
 			uint64_t id;
-			uint8_t priority = 0;
+			uint16_t priority = 0;
 			message_t message;
 			mutable uint16_t notified;
-			notification(uint8_t notified, message_t message, threadpool * threadpool) : id(++threadpool->notification_id_), message(message), notified(notified)
+			notification(uint16_t notified, message_t message, threadpool * threadpool) : 
+				id(++threadpool->notification_id_), message(message), notified(notified)
 			{
 				switch (message)
 				{
@@ -240,7 +240,7 @@ namespace stp
 			notification_comparator() = default;
 			bool operator()(notification const & n1, notification const & n2) const
 			{
-				if (n1.priority == 0 || n2.priority == 0 || n1.priority == n2.priority)
+				if (n1.priority + n2.priority < 2 || n1.priority == n2.priority)
 				{
 					return n1.id > n2.id;
 				}
@@ -251,16 +251,15 @@ namespace stp
 			}
 		};
 
+		state_t thread_state_ = state_t::waiting;
+		int16_t thread_active_ = 0;
+		uint16_t const thread_amount_;
+		uint64_t notification_id_ = 0;
 		std::queue<std::pair<std::function<void()> *, bool>> task_queue_;
 		std::priority_queue<notification, std::deque<notification>, notification_comparator> notification_queue_;
-		std::thread * thread_pool_;
-		std::thread * thread_monitor_;
+		std::thread * thread_array_;
 		std::mutex thread_lock_;
 		std::condition_variable thread_alert_;
-		state_t thread_state_ = state_t::waiting; // Should the threadpool sync with this var?
-		int8_t thread_active_ = 0;
-		uint8_t const thread_number_;
-		uint64_t notification_id_ = 0;
 
 		void threadpool_()
 		{
@@ -271,14 +270,8 @@ namespace stp
 
 			while (true)
 			{
-				thread_alert_.wait(lock, [this, &last_id]
-				{
-					if (!notification_queue_.empty())
-					{
-						return notification_queue_.top().id != last_id;
-					}
-					return false;
-				});
+				do thread_alert_.wait_for(lock, std::chrono::milliseconds(1));
+				while (notification_queue_.empty() || notification_queue_.top().id == last_id);
 				last_id = notification_queue_.top().id;
 
 				switch (notification_queue_.top().message)
@@ -341,7 +334,8 @@ namespace stp
 							lock.lock();
 							--thread_active_;
 						}
-						while ((notification_queue_.empty() || notification_queue_.top().message != message_t::terminate) && !task_queue_.empty())
+						while ((notification_queue_.empty() || notification_queue_.top().message != message_t::terminate) &&
+							   !task_queue_.empty())
 						{
 							task = task_queue_.front();
 							task_queue_.pop();
@@ -368,17 +362,6 @@ namespace stp
 					--thread_active_;
 				}
 			}
-		}
-		void threadmonitor_() // Make it more robust
-		{
-			std::unique_lock<std::mutex> lock(thread_lock_, std::defer_lock);
-			while (lock.lock(), -thread_active_ != thread_number_)
-			{
-				lock.unlock();
-				thread_alert_.notify_all();
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			}
-			lock.unlock();
 		}
 	};
 }
