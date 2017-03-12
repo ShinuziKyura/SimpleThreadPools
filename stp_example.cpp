@@ -103,10 +103,10 @@ int main()
 	// Sorting second four vectors (with concurrency)
 
 	stp::threadpool threadpool(thread_amount);
-	stp::task <std::chrono::duration<double, std::nano>> task_1(quicksort, &vec_5);
-	stp::task <std::chrono::duration<double, std::nano>> task_2(quicksort, &vec_6);
-	stp::task <std::chrono::duration<double, std::nano>> task_3(quicksort, &vec_7);
-	stp::task <std::chrono::duration<double, std::nano>> task_4(quicksort, &vec_8);
+	stp::task<std::chrono::duration<double, std::nano>> task_1(quicksort, &vec_5);
+	stp::task<std::chrono::duration<double, std::nano>> task_2(quicksort, &vec_6);
+	stp::task<std::chrono::duration<double, std::nano>> task_3(quicksort, &vec_7);
+	stp::task<std::chrono::duration<double, std::nano>> task_4(quicksort, &vec_8);
 	
 	threadpool.run();
 	threadpool.new_sync_task(task_1);
@@ -114,36 +114,38 @@ int main()
 	threadpool.new_sync_task(task_3);
 	threadpool.new_sync_task(task_4);
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(thread_amount ? thread_amount : std::thread::hardware_concurrency()));
+	while (threadpool.synced() != 4) 
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
 
 	std::cout << "Sorting second four vectors... " << std::endl;
 	start_timer = std::chrono::high_resolution_clock::now();
 
-	threadpool.start_sync_task();
+	threadpool.run_synced();
 
 	std::cout << "Sorting vector 5..." << std::endl;
-	while (!task_1.is_done());
+	while (!task_1.executed());
 	elapsed5 = task_1.result();
 	std::cout << "Elapsed: " << elapsed5.count() << "ns" << std::endl;
 
 	std::cout << "Sorting vector 6..." << std::endl;
-	while (!task_2.is_done());
+	while (!task_2.executed());
 	elapsed6 = task_2.result();
 	std::cout << "Elapsed: " << elapsed6.count() << "ns" << std::endl;
 
 	std::cout << "Sorting vector 7..." << std::endl;
-	while (!task_3.is_done());
+	while (!task_3.executed());
 	elapsed7 = task_3.result();
 	std::cout << "Elapsed: " << elapsed7.count() << "ns" << std::endl;
 
 	std::cout << "Sorting vector 8..." << std::endl;
-	while (!task_4.is_done());
+	while (!task_4.executed());
 	elapsed8 = task_4.result();
 	std::cout << "Elapsed: " << elapsed8.count() << "ns" << std::endl;
 
 	stop_timer = std::chrono::high_resolution_clock::now();
 	std::cout << "Elapsed on second four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << std::endl;
 
-	while (threadpool.is_active());
 	return 0;
 }
