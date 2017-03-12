@@ -105,7 +105,7 @@ namespace stp
 			if (thread_state_ != stp::thread_state::finalizing &&
 				thread_state_ != stp::thread_state::terminating)
 			{
-				thread_sync_executed_ = thread_ready_sync_._My_val;
+				thread_sync_executed_ = thread_sync_ready_._My_val;
 
 				if (thread_state_ == stp::thread_state::running)
 				{
@@ -148,7 +148,7 @@ namespace stp
 		}
 		int running()
 		{
-			return thread_run_ + thread_run_sync_;
+			return thread_run_ + thread_sync_run_;
 		}
 		int ready()
 		{
@@ -156,7 +156,7 @@ namespace stp
 		}
 		int synced()
 		{
-			return thread_ready_sync_;
+			return thread_sync_ready_;
 		}
 		bool available()
 		{
@@ -211,8 +211,8 @@ namespace stp
 		std::atomic<int16_t> thread_sync_executed_ = 0;
 		std::atomic<int16_t> thread_ready_;
 		std::atomic<int16_t> thread_run_;
-		std::atomic<int16_t> thread_ready_sync_;
-		std::atomic<int16_t> thread_run_sync_;
+		std::atomic<int16_t> thread_sync_ready_;
+		std::atomic<int16_t> thread_sync_run_;
 		std::atomic<int16_t> const thread_number_;
 
 		void threadpool__()
@@ -318,7 +318,7 @@ namespace stp
 		void threadsync__(std::function<void()> * & task, std::unique_lock<std::mutex> & lock, std::shared_lock<std::shared_mutex> & shared_lock)
 		{
 			--thread_ready_;
-			++thread_ready_sync_;
+			++thread_sync_ready_;
 			lock.unlock();
 
 			while (thread_state_ != stp::thread_state::terminating)
@@ -338,13 +338,13 @@ namespace stp
 						{
 							--thread_sync_executed_;
 
-							--thread_ready_sync_;
-							++thread_run_sync_;
+							--thread_sync_ready_;
+							++thread_sync_run_;
 
 							(*task)();
 							task = nullptr;
 
-							--thread_run_sync_;
+							--thread_sync_run_;
 
 							break;
 						}
@@ -353,7 +353,7 @@ namespace stp
 					case stp::thread_state::waiting:
 						continue;
 					case stp::thread_state::finalizing:
-						--thread_ready_sync_;
+						--thread_sync_ready_;
 
 						break;
 					case stp::thread_state::terminating:
