@@ -105,6 +105,11 @@ namespace stp
 		}
 		void run_synced()
 		{
+			run_synced(std::chrono::seconds(0));
+		}
+		template <class Rep_, class Period_>
+		void run_synced(std::chrono::duration<Rep_, Period_> try_for)
+		{
 			if (thread_state_ != thread_state_t::finalizing)
 			{
 				if (thread_sync_executed_)
@@ -112,7 +117,11 @@ namespace stp
 					throw std::runtime_error("Threadpool synchronizing");
 				}
 
-				std::unique_lock<std::mutex> lock(thread_lock_, std::try_to_lock);
+				std::unique_lock<std::mutex> lock(thread_lock_, std::defer_lock);
+				auto try_until = std::chrono::high_resolution_clock::now() + try_for;
+				do lock.try_lock();
+				while (!lock.owns_lock() && try_until > std::chrono::high_resolution_clock::now());
+
 				if (!lock.owns_lock())
 				{
 					throw std::runtime_error("Threadpool busy");
@@ -149,7 +158,7 @@ namespace stp
 			{
 				thread_state_ = thread_state_t::waiting;
 				thread_state_changed_ = thread_number_;
-				
+
 				thread_alert_.notify_all();
 				thread_sync_alert_.notify_all();
 			}
@@ -160,29 +169,25 @@ namespace stp
 			{
 				thread_state_ = thread_state_t::finalizing;
 				thread_state_changed_ = thread_number_;
-				
+
 				thread_alert_.notify_all();
 				thread_sync_alert_.notify_all();
 			}
 		}
-		int running() // Benign data races may occur
+		int running()
 		{
-			std::unique_lock<std::mutex> lock(thread_lock_, std::try_to_lock);
 			return (thread_run_ + thread_sync_run_);
 		}
-		int ready() // Benign data races may occur
+		int ready()
 		{
-			std::unique_lock<std::mutex> lock(thread_lock_, std::try_to_lock);
 			return thread_ready_;
 		}
-		int synced() // Benign data races may occur
+		int synced()
 		{
-			std::unique_lock<std::mutex> lock(thread_lock_, std::try_to_lock);
 			return thread_sync_ready_;
 		}
-		bool available() // Benign data races may occur
+		bool available()
 		{
-			std::unique_lock<std::mutex> lock(thread_lock_, std::try_to_lock);
 			return (thread_ready_ != 0);
 		}
 		int size()
@@ -193,8 +198,8 @@ namespace stp
 		threadpool() = delete;
 		threadpool(int thread_number, thread_state thread_status = thread_state::waiting) :
 			thread_state_(static_cast<thread_state_t::state>((static_cast<int>(thread_status) & 0xFFFFFFFE) == 0 ?
-															 thread_status :
-															 thread_state::waiting)),
+				thread_status :
+				thread_state::waiting)),
 			thread_state_changed_(0),
 			thread_sync_executed_(false),
 			thread_sync_count_(0),
@@ -214,7 +219,7 @@ namespace stp
 		{
 			thread_state_ = thread_state_t::terminating;
 			thread_state_changed_ = thread_number_;
-			
+
 			thread_alert_.notify_all();
 			thread_sync_alert_.notify_all();
 
@@ -263,84 +268,84 @@ namespace stp
 				{
 					switch (thread_state_)
 					{
-						case thread_state_t::running:
-							if (!task_queue_.empty())
+					case thread_state_t::running:
+						if (!task_queue_.empty())
+						{
+							if (!task.first)
 							{
-								if (!task.first)
-								{
-									task = task_queue_.front();
-									task_queue_.pop();
-								}
+								task = task_queue_.front();
+								task_queue_.pop();
 							}
-							else
-							{
-								break;
-							}
-
-							if (task.first && !task.second)
-							{
-								threadrun__(task.first, lock);
-							}
-							else if (task.first && task.second)
-							{
-								threadsync__(task.first, lock, sync_lock);
-							}
-							else
-							{
-								break;
-							}
-
-							continue;
-						case thread_state_t::waiting:
-							if (!task_queue_.empty())
-							{
-								if (!task.first)
-								{
-									task = task_queue_.front();
-									task_queue_.pop();
-								}
-							}
-							else
-							{
-								break;
-							}
-
-							if (task.first && task.second)
-							{
-								threadsync__(task.first, lock, sync_lock);
-							}
-							else
-							{
-								break;
-							}
-
-							continue;
-						case thread_state_t::finalizing:
-							if (!task_queue_.empty())
-							{
-								if (!task.first)
-								{
-									task = task_queue_.front();
-									task_queue_.pop();
-								}
-							}
-							else
-							{
-								break;
-							}
-
-							if (task.first)
-							{
-								threadrun__(task.first, lock);
-							}
-							else
-							{
-								break;
-							}
-
-							continue;
-						case thread_state_t::terminating:
+						}
+						else
+						{
 							break;
+						}
+
+						if (task.first && !task.second)
+						{
+							threadrun__(task.first, lock);
+						}
+						else if (task.first && task.second)
+						{
+							threadsync__(task.first, lock, sync_lock);
+						}
+						else
+						{
+							break;
+						}
+
+						continue;
+					case thread_state_t::waiting:
+						if (!task_queue_.empty())
+						{
+							if (!task.first)
+							{
+								task = task_queue_.front();
+								task_queue_.pop();
+							}
+						}
+						else
+						{
+							break;
+						}
+
+						if (task.first && task.second)
+						{
+							threadsync__(task.first, lock, sync_lock);
+						}
+						else
+						{
+							break;
+						}
+
+						continue;
+					case thread_state_t::finalizing:
+						if (!task_queue_.empty())
+						{
+							if (!task.first)
+							{
+								task = task_queue_.front();
+								task_queue_.pop();
+							}
+						}
+						else
+						{
+							break;
+						}
+
+						if (task.first)
+						{
+							threadrun__(task.first, lock);
+						}
+						else
+						{
+							break;
+						}
+
+						continue;
+					case thread_state_t::terminating:
+						break;
 					}
 					break;
 				}
@@ -362,7 +367,7 @@ namespace stp
 			++thread_ready_;
 		}
 		void threadsync__(std::function<void()> * & task, std::unique_lock<std::mutex> & lock,
-						  std::unique_lock<std::mutex> & sync_lock)
+			std::unique_lock<std::mutex> & sync_lock)
 		{
 			--thread_ready_;
 			++thread_sync_ready_;
@@ -380,38 +385,38 @@ namespace stp
 
 				switch (thread_state_)
 				{
-					case thread_state_t::running:
-						if (thread_sync_executed_)
+				case thread_state_t::running:
+					if (thread_sync_executed_)
+					{
+						if (thread_sync_count_-- == 1) // Some synchronization trickery
 						{
-							if (thread_sync_count_-- == 1) // Some synchronization trickery
-							{
-								thread_sync_executed_ = false;
-							}
-							else
-							{
-								while (thread_sync_executed_);
-							}
-
-							(*task)();
-							task = nullptr;
-
-							lock.lock();
-							--thread_sync_run_;
-							
-							break;
+							thread_sync_executed_ = false;
+						}
+						else
+						{
+							while (thread_sync_executed_);
 						}
 
-					case thread_state_t::waiting:
-						continue;
-					case thread_state_t::finalizing:
 						(*task)();
 						task = nullptr;
 
-					case thread_state_t::terminating:
 						lock.lock();
-						--thread_sync_ready_;
+						--thread_sync_run_;
 
 						break;
+					}
+
+				case thread_state_t::waiting:
+					continue;
+				case thread_state_t::finalizing:
+					(*task)();
+					task = nullptr;
+
+				case thread_state_t::terminating:
+					lock.lock();
+					--thread_sync_ready_;
+
+					break;
 				}
 				break;
 			}
