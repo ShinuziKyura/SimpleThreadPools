@@ -75,21 +75,21 @@ int main()
 	// Sorting first four vectors (without concurrency)
 
 	{
-		stp::threadpool threadpool(thread_single);
+		stp::threadpool threadpool_1(thread_single);
 		stp::task<double> task_1(quicksort, std::ref(vec_1));
 		stp::task<double> task_2(quicksort, std::ref(vec_2));
 		stp::task<double> task_3(quicksort, std::ref(vec_3));
 		stp::task<double> task_4(quicksort, std::ref(vec_4));
 
-		threadpool.new_task(task_1);
-		threadpool.new_task(task_2);
-		threadpool.new_task(task_3);
-		threadpool.new_task(task_4);
+		threadpool_1.new_task(task_1);
+		threadpool_1.new_task(task_2);
+		threadpool_1.new_task(task_3);
+		threadpool_1.new_task(task_4);
 
 		std::cout << "Sorting first four vectors... " << std::endl;
 		start_timer = std::chrono::high_resolution_clock::now();
 
-		threadpool.run();
+		threadpool_1.run();
 
 		std::cout << "Sorting vector 1..." << std::endl;
 		while (!task_1.ready());
@@ -114,18 +114,18 @@ int main()
 	// Sorting second four vectors (with concurrency)
 
 	{
-		stp::threadpool threadpool(thread_amount, stp::thread_state::running);
+		stp::threadpool threadpool_2(thread_amount, stp::thread_state::running);
 		stp::task<double> task_5(quicksort, std::ref(vec_5));
 		stp::task<double> task_6(quicksort, std::ref(vec_6));
 		stp::task<double> task_7(quicksort, std::ref(vec_7));
 		stp::task<double> task_8(quicksort, std::ref(vec_8));
 
-		threadpool.new_sync_task(task_5);
-		threadpool.new_sync_task(task_6);
-		threadpool.new_sync_task(task_7);
-		threadpool.new_sync_task(task_8);
+		threadpool_2.new_sync_task(task_5);
+		threadpool_2.new_sync_task(task_6);
+		threadpool_2.new_sync_task(task_7);
+		threadpool_2.new_sync_task(task_8);
 
-		while (threadpool.synced() != 4)
+		while (threadpool_2.synced() != 4)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
@@ -133,7 +133,7 @@ int main()
 		std::cout << "Sorting second four vectors... " << std::endl;
 		start_timer = std::chrono::high_resolution_clock::now();
 
-		threadpool.run_synced();
+		threadpool_2.run_synced();
 
 		std::cout << "Sorting vector 5..." << std::endl;
 		while (!task_5.ready());
