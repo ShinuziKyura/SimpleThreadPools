@@ -23,10 +23,10 @@ double generator(std::vector<int> & vec)
 	return std::chrono::duration<double, std::nano>(stop_timer - start_timer).count();
 }
 
-double quicksort(std::vector<int> & vec)
+double sorter(std::vector<int> & vec)
 {
 	start_timer = std::chrono::high_resolution_clock::now();
-	std::sort(vec.begin(), vec.end(), [] (int const & i1, int const & i2) -> bool
+	std::sort(vec.begin(), vec.end(), [] (int const & i1, int const & i2)
 	{
 		return i1 < i2;
 	});
@@ -73,13 +73,13 @@ int main()
 	std::cout << "Elapsed: " << generator(vec_8) << "ns" << std::endl;
 
 	// Sorting first four vectors (without concurrency)
-
+	
 	{
 		stp::threadpool threadpool_1(thread_single);
-		stp::task<double> task_1(quicksort, std::ref(vec_1));
-		stp::task<double> task_2(quicksort, std::ref(vec_2));
-		stp::task<double> task_3(quicksort, std::ref(vec_3));
-		stp::task<double> task_4(quicksort, std::ref(vec_4));
+		stp::task<double> task_1(sorter, std::ref(vec_1));
+		stp::task<double> task_2(sorter, std::ref(vec_2));
+		stp::task<double> task_3(sorter, std::ref(vec_3));
+		stp::task<double> task_4(sorter, std::ref(vec_4));
 
 		threadpool_1.new_task(task_1);
 		threadpool_1.new_task(task_2);
@@ -115,10 +115,10 @@ int main()
 
 	{
 		stp::threadpool threadpool_2(thread_amount, stp::thread_state::running);
-		stp::task<double> task_5(quicksort, std::ref(vec_5));
-		stp::task<double> task_6(quicksort, std::ref(vec_6));
-		stp::task<double> task_7(quicksort, std::ref(vec_7));
-		stp::task<double> task_8(quicksort, std::ref(vec_8));
+		stp::task<double> task_5(sorter, std::ref(vec_5));
+		stp::task<double> task_6(sorter, std::ref(vec_6));
+		stp::task<double> task_7(sorter, std::ref(vec_7));
+		stp::task<double> task_8(sorter, std::ref(vec_8));
 
 		threadpool_2.new_sync_task(task_5);
 		threadpool_2.new_sync_task(task_6);
