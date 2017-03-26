@@ -1,216 +1,159 @@
 #include "stp.h"
+
 #include <iostream>
-#include <fstream>
-#include <vector>
 #include <algorithm>
 #include <random>
-#include <chrono>
+
+constexpr int thread_single = 1;
+constexpr int thread_amount = 0; // 0 == std::thread::hardware_concurrency()
 
 std::random_device seed;
 std::mt19937 generate(seed());
 std::uniform_int_distribution<int> random_list(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+thread_local std::chrono::time_point<std::chrono::high_resolution_clock> start_timer, stop_timer;
 
-std::chrono::duration<double, std::nano> generator(std::vector<int> * vec)
+double generator(std::vector<int> & vec)
 {
-	auto start_timer = std::chrono::high_resolution_clock::now();
-	for (auto & i : *vec)
+	start_timer = std::chrono::high_resolution_clock::now();
+	for (auto & i : vec)
+	{
 		i = random_list(generate);
-	auto stop_timer = std::chrono::high_resolution_clock::now();
-	return std::chrono::duration<double, std::nano>(stop_timer - start_timer);
+	}
+	stop_timer = std::chrono::high_resolution_clock::now();
+	return std::chrono::duration<double, std::nano>(stop_timer - start_timer).count();
 }
 
-std::chrono::duration<double, std::nano> quicksort(std::vector<int> * vec)
+double sorter(std::vector<int> & vec)
 {
-	auto start_timer = std::chrono::high_resolution_clock::now();
-	std::sort((*vec).begin(), (*vec).end(), [] (int const & i1, int const & i2) -> bool
+	start_timer = std::chrono::high_resolution_clock::now();
+	std::sort(vec.begin(), vec.end(), [] (int const & i1, int const & i2)
 	{
 		return i1 < i2;
 	});
-	auto stop_timer = std::chrono::high_resolution_clock::now();
-	return std::chrono::duration<double, std::nano>(stop_timer - start_timer);
+	stop_timer = std::chrono::high_resolution_clock::now();
+	return std::chrono::duration<double, std::nano>(stop_timer - start_timer).count();
 }
 
 int main()
 {
+	std::chrono::time_point<std::chrono::high_resolution_clock> start_timer, stop_timer;
+
 	// Generating vectors
 
 	std::cout << "Generating vector 1..." << std::endl;
-	std::vector<int> vec1(1000000);
-	auto elapsed1 = generator(&vec1);
-	std::cout << "Elapsed: " << elapsed1.count() << "ns" << std::endl;
+	std::vector<int> vec_1(1000000);
+	std::cout << "Elapsed: " << generator(vec_1) << "ns" << std::endl;
 
 	std::cout << "Generating vector 2..." << std::endl;
-	std::vector<int> vec2(1000000);
-	auto elapsed2 = generator(&vec2);
-	std::cout << "Elapsed: " << elapsed2.count() << "ns" << std::endl;
+	std::vector<int> vec_2(1000000);
+	std::cout << "Elapsed: " << generator(vec_2) << "ns" << std::endl;
 
 	std::cout << "Generating vector 3..." << std::endl;
-	std::vector<int> vec3(1000000);
-	auto elapsed3 = generator(&vec3);
-	std::cout << "Elapsed: " << elapsed3.count() << "ns" << std::endl;
+	std::vector<int> vec_3(1000000);
+	std::cout << "Elapsed: " << generator(vec_3) << "ns" << std::endl;
 
 	std::cout << "Generating vector 4..." << std::endl;
-	std::vector<int> vec4(1000000);
-	auto elapsed4 = generator(&vec4);
-	std::cout << "Elapsed: " << elapsed4.count() << "ns" << std::endl;
+	std::vector<int> vec_4(1000000);
+	std::cout << "Elapsed: " << generator(vec_4) << "ns" << std::endl;
 
 	std::cout << "Generating vector 5..." << std::endl;
-	std::vector<int> vec5(1000000);
-	auto elapsed5 = generator(&vec5);
-	std::cout << "Elapsed: " << elapsed5.count() << "ns" << std::endl;
+	std::vector<int> vec_5(1000000);
+	std::cout << "Elapsed: " << generator(vec_5) << "ns" << std::endl;
 
 	std::cout << "Generating vector 6..." << std::endl;
-	std::vector<int> vec6(1000000);
-	auto elapsed6 = generator(&vec6);
-	std::cout << "Elapsed: " << elapsed6.count() << "ns" << std::endl;
+	std::vector<int> vec_6(1000000);
+	std::cout << "Elapsed: " << generator(vec_6) << "ns" << std::endl;
 
 	std::cout << "Generating vector 7..." << std::endl;
-	std::vector<int> vec7(1000000);
-	auto elapsed7 = generator(&vec7);
-	std::cout << "Elapsed: " << elapsed7.count() << "ns" << std::endl;
+	std::vector<int> vec_7(1000000);
+	std::cout << "Elapsed: " << generator(vec_7) << "ns" << std::endl;
 
 	std::cout << "Generating vector 8..." << std::endl;
-	std::vector<int> vec8(1000000);
-	auto elapsed8 = generator(&vec8);
-	std::cout << "Elapsed: " << elapsed8.count() << "ns" << std::endl;
-/*
-	std::fstream unsorted("vectors_unsorted.txt", std::ios::out | std::ios::trunc);
-	std::fstream sorted("vectors_sorted.txt", std::ios::out | std::ios::trunc);
+	std::vector<int> vec_8(1000000);
+	std::cout << "Elapsed: " << generator(vec_8) << "ns" << std::endl;
 
-	unsorted << "Vector 1:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		unsorted << vec1[i] << std::endl;
-	unsorted << "Elapsed: " << elapsed1.count() << "ns" << std::endl << std::endl;
-	unsorted << "Vector 2:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		unsorted << vec2[i] << std::endl;
-	unsorted << "Elapsed: " << elapsed2.count() << "ns" << std::endl << std::endl;
-	unsorted << "Vector 3:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		unsorted << vec3[i] << std::endl;
-	unsorted << "Elapsed: " << elapsed3.count() << "ns" << std::endl << std::endl;
-	unsorted << "Vector 4:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		unsorted << vec4[i] << std::endl;
-	unsorted << "Elapsed: " << elapsed4.count() << "ns" << std::endl << std::endl;
-	unsorted << "Vector 5:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		unsorted << vec5[i] << std::endl;
-	unsorted << "Elapsed: " << elapsed5.count() << "ns" << std::endl << std::endl;
-	unsorted << "Vector 6:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		unsorted << vec6[i] << std::endl;
-	unsorted << "Elapsed: " << elapsed6.count() << "ns" << std::endl << std::endl;
-	unsorted << "Vector 7:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		unsorted << vec7[i] << std::endl;
-	unsorted << "Elapsed: " << elapsed7.count() << "ns" << std::endl << std::endl;
-	unsorted << "Vector 8:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		unsorted << vec8[i] << std::endl;
-	unsorted << "Elapsed: " << elapsed8.count() << "ns" << std::endl << std::endl;
-*/
 	// Sorting first four vectors (without concurrency)
+	
+	{
+		stp::threadpool threadpool_1(thread_single);
+		stp::task<double> task_1(sorter, std::ref(vec_1));
+		stp::task<double> task_2(sorter, std::ref(vec_2));
+		stp::task<double> task_3(sorter, std::ref(vec_3));
+		stp::task<double> task_4(sorter, std::ref(vec_4));
 
-	std::cout << "Sorting first four vectors... " << std::endl;
-	auto start_timer = std::chrono::high_resolution_clock::now();
+		threadpool_1.new_task(task_1);
+		threadpool_1.new_task(task_2);
+		threadpool_1.new_task(task_3);
+		threadpool_1.new_task(task_4);
 
-	std::cout << "Sorting vector 1..." << std::endl;
-	elapsed1 = quicksort(&vec1);
-	std::cout << "Elapsed: " << elapsed1.count() << "ns" << std::endl;
+		std::cout << "Sorting first four vectors... " << std::endl;
+		start_timer = std::chrono::high_resolution_clock::now();
 
-	std::cout << "Sorting vector 2..." << std::endl;
-	elapsed2 = quicksort(&vec2);
-	std::cout << "Elapsed: " << elapsed2.count() << "ns" << std::endl;
+		threadpool_1.run();
 
-	std::cout << "Sorting vector 3..." << std::endl;
-	elapsed3 = quicksort(&vec3);
-	std::cout << "Elapsed: " << elapsed3.count() << "ns" << std::endl;
+		std::cout << "Sorting vector 1..." << std::endl;
+		while (!task_1.ready());
+		std::cout << "Elapsed: " << task_1.result() << "ns" << std::endl;
 
-	std::cout << "Sorting vector 4..." << std::endl;
-	elapsed4 = quicksort(&vec4);
-	std::cout << "Elapsed: " << elapsed4.count() << "ns" << std::endl;
+		std::cout << "Sorting vector 2..." << std::endl;
+		while (!task_2.ready());
+		std::cout << "Elapsed: " << task_2.result() << "ns" << std::endl;
 
-	auto stop_timer = std::chrono::high_resolution_clock::now();
-	std::cout << "Elapsed on first four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << std::endl;
+		std::cout << "Sorting vector 3..." << std::endl;
+		while (!task_3.ready());
+		std::cout << "Elapsed: " << task_3.result() << "ns" << std::endl;
+
+		std::cout << "Sorting vector 4..." << std::endl;
+		while (!task_4.ready());
+		std::cout << "Elapsed: " << task_4.result() << "ns" << std::endl;
+
+		stop_timer = std::chrono::high_resolution_clock::now();
+		std::cout << "Elapsed on first four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << std::endl;
+	}
 
 	// Sorting second four vectors (with concurrency)
 
-	stp::threadpool threadpool(0);
-	stp::task <std::chrono::duration<double, std::nano>> task1(quicksort, &vec5);
-	stp::task <std::chrono::duration<double, std::nano>> task2(quicksort, &vec6);
-	stp::task <std::chrono::duration<double, std::nano>> task3(quicksort, &vec7);
-	stp::task <std::chrono::duration<double, std::nano>> task4(quicksort, &vec8);
-	threadpool.new_task(task1);
-	threadpool.new_task(task2);
-	threadpool.new_task(task3);
-	threadpool.new_task(task4);
-	
-	std::cout << "Sorting second four vectors... " << std::endl;
-	start_timer = std::chrono::high_resolution_clock::now();
+	{
+		stp::threadpool threadpool_2(thread_amount, stp::thread_state::running);
+		stp::task<double> task_5(sorter, std::ref(vec_5));
+		stp::task<double> task_6(sorter, std::ref(vec_6));
+		stp::task<double> task_7(sorter, std::ref(vec_7));
+		stp::task<double> task_8(sorter, std::ref(vec_8));
 
-	threadpool.run();
+		threadpool_2.new_sync_task(task_5);
+		threadpool_2.new_sync_task(task_6);
+		threadpool_2.new_sync_task(task_7);
+		threadpool_2.new_sync_task(task_8);
 
-	std::cout << "Sorting vector 5..." << std::endl;
-	while (!task1.is_ready());
-	elapsed5 = task1.task_result();
-	std::cout << "Elapsed: " << elapsed5.count() << "ns" << std::endl;
+		while (threadpool_2.synced() != 4)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
 
-	std::cout << "Sorting vector 6..." << std::endl;
-	while (!task2.is_ready());
-	elapsed6 = task2.task_result();
-	std::cout << "Elapsed: " << elapsed6.count() << "ns" << std::endl;
+		std::cout << "Sorting second four vectors... " << std::endl;
+		start_timer = std::chrono::high_resolution_clock::now();
 
-	std::cout << "Sorting vector 7..." << std::endl;
-	while (!task3.is_ready());
-	elapsed7 = task3.task_result();
-	std::cout << "Elapsed: " << elapsed7.count() << "ns" << std::endl;
+		threadpool_2.run_synced();
 
-	std::cout << "Sorting vector 8..." << std::endl;
-	while (!task4.is_ready());
-	elapsed8 = task4.task_result();
-	std::cout << "Elapsed: " << elapsed8.count() << "ns" << std::endl;
+		std::cout << "Sorting vector 5..." << std::endl;
+		while (!task_5.ready());
+		std::cout << "Elapsed: " << task_5.result() << "ns" << std::endl;
 
-	stop_timer = std::chrono::high_resolution_clock::now();
-	std::cout << "Elapsed on second four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << std::endl;
-/*
-	sorted << "Vector 1:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		sorted << vec1[i] << std::endl;
-	sorted << "Elapsed: " << elapsed1.count() << "ns" << std::endl << std::endl;
-	sorted << "Vector 2:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		sorted << vec2[i] << std::endl;
-	sorted << "Elapsed: " << elapsed2.count() << "ns" << std::endl << std::endl;
-	sorted << "Vector 3:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		sorted << vec3[i] << std::endl;
-	sorted << "Elapsed: " << elapsed3.count() << "ns" << std::endl << std::endl;
-	sorted << "Vector 4:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		sorted << vec4[i] << std::endl;
-	sorted << "Elapsed: " << elapsed4.count() << "ns" << std::endl << std::endl;
-	sorted << "Vector 5:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		sorted << vec5[i] << std::endl;
-	sorted << "Elapsed: " << elapsed5.count() << "ns" << std::endl << std::endl;
-	sorted << "Vector 6:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		sorted << vec6[i] << std::endl;
-	sorted << "Elapsed: " << elapsed6.count() << "ns" << std::endl << std::endl;
-	sorted << "Vector 7:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		sorted << vec7[i] << std::endl;
-	sorted << "Elapsed: " << elapsed7.count() << "ns" << std::endl << std::endl;
-	sorted << "Vector 8:" << std::endl;
-	for (int i = 0; i < 1000000; ++i)
-		sorted << vec8[i] << std::endl;
-	sorted << "Elapsed: " << elapsed8.count() << "ns" << std::endl << std::endl;
+		std::cout << "Sorting vector 6..." << std::endl;
+		while (!task_6.ready());
+		std::cout << "Elapsed: " << task_6.result() << "ns" << std::endl;
 
-	unsorted.close();
-	sorted.close();
-*/
-	threadpool.stop();
-	while (threadpool.is_running());
+		std::cout << "Sorting vector 7..." << std::endl;
+		while (!task_7.ready());
+		std::cout << "Elapsed: " << task_7.result() << "ns" << std::endl;
+
+		std::cout << "Sorting vector 8..." << std::endl;
+		while (!task_8.ready());
+		std::cout << "Elapsed: " << task_8.result() << "ns" << std::endl;
+
+		stop_timer = std::chrono::high_resolution_clock::now();
+		std::cout << "Elapsed on second four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << std::endl;
+	}
+
 	return 0;
 }
