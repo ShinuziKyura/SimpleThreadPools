@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <random>
 
+constexpr size_t single_thread = 1;
+constexpr size_t multiple_threads = 4; // 0 == std::thread::hardware_concurrency()
+
 std::random_device seed;
 std::mt19937 generate(seed());
 std::uniform_int_distribution<int> random_list(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
@@ -31,11 +34,8 @@ double sorter(std::vector<int> & vec)
 
 int main()
 {
-	constexpr size_t thread_single = 1;
-	constexpr size_t thread_amount = 4; // 0 == std::thread::hardware_concurrency()
-
-	std::cout.precision(5);
 	std::cout << std::scientific;
+	std::cout.precision(5);	
 
 	// Generating vectors	
 
@@ -47,6 +47,7 @@ int main()
 	std::vector<int> vec_6(1000000);
 	std::vector<int> vec_7(1000000);
 	std::vector<int> vec_8(1000000);
+
 	stp::task<double> task_1(generator, std::ref(vec_1));
 	stp::task<double> task_2(generator, std::ref(vec_2));
 	stp::task<double> task_3(generator, std::ref(vec_3));
@@ -79,7 +80,8 @@ int main()
 	// Sorting first four vectors (without concurrency)
 
 	{
-		stp::threadpool threadpool_1(thread_single);
+		stp::threadpool threadpool_1(single_thread);
+
 		stp::task<double> task_1(sorter, std::ref(vec_1));
 		stp::task<double> task_2(sorter, std::ref(vec_2));
 		stp::task<double> task_3(sorter, std::ref(vec_3));
@@ -114,7 +116,8 @@ int main()
 	// Sorting second four vectors (with concurrency)
 
 	{
-		stp::threadpool threadpool_2(thread_amount, stp::thread_state::running);
+		stp::threadpool threadpool_2(multiple_threads, stp::thread_state::running);
+
 		stp::task<double> task_5(sorter, std::ref(vec_5));
 		stp::task<double> task_6(sorter, std::ref(vec_6));
 		stp::task<double> task_7(sorter, std::ref(vec_7));
@@ -136,10 +139,7 @@ int main()
 
 		threadpool_2.sync_run();
 
-		while (!task_5.ready());
-		while (!task_6.ready());
-		while (!task_7.ready());
-		while (!task_8.ready());
+		while (!task_8.ready() || !task_7.ready() || !task_6.ready() || !task_5.ready());
 
 		stop_timer = std::chrono::high_resolution_clock::now();
 
