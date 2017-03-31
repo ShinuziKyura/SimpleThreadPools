@@ -4,12 +4,10 @@
 #include <algorithm>
 #include <random>
 
-constexpr int thread_single = 1;
-constexpr int thread_amount = 0; // 0 == std::thread::hardware_concurrency()
-
 std::random_device seed;
 std::mt19937 generate(seed());
 std::uniform_int_distribution<int> random_list(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+
 thread_local std::chrono::time_point<std::chrono::high_resolution_clock> start_timer, stop_timer;
 
 double generator(std::vector<int> & vec)
@@ -26,51 +24,38 @@ double generator(std::vector<int> & vec)
 double sorter(std::vector<int> & vec)
 {
 	start_timer = std::chrono::high_resolution_clock::now();
-	std::sort(vec.begin(), vec.end(), [] (int const & i1, int const & i2)
-	{
-		return i1 < i2;
-	});
+	std::sort(vec.begin(), vec.end());
 	stop_timer = std::chrono::high_resolution_clock::now();
 	return std::chrono::duration<double, std::nano>(stop_timer - start_timer).count();
 }
 
 int main()
 {
-	std::chrono::time_point<std::chrono::high_resolution_clock> start_timer, stop_timer;
+	constexpr size_t thread_single = 1;
+	constexpr size_t thread_amount = 4; // 0 == std::thread::hardware_concurrency()
 
 	// Generating vectors
 
-	std::cout << "Generating vector 1..." << std::endl;
+	std::cout.precision(6);
+	std::cout << "Generating eight vectors..." << std::endl;
+
 	std::vector<int> vec_1(1000000);
-	std::cout << "Elapsed: " << generator(vec_1) << "ns" << std::endl;
-
-	std::cout << "Generating vector 2..." << std::endl;
 	std::vector<int> vec_2(1000000);
-	std::cout << "Elapsed: " << generator(vec_2) << "ns" << std::endl;
-
-	std::cout << "Generating vector 3..." << std::endl;
 	std::vector<int> vec_3(1000000);
-	std::cout << "Elapsed: " << generator(vec_3) << "ns" << std::endl;
-
-	std::cout << "Generating vector 4..." << std::endl;
 	std::vector<int> vec_4(1000000);
-	std::cout << "Elapsed: " << generator(vec_4) << "ns" << std::endl;
-
-	std::cout << "Generating vector 5..." << std::endl;
 	std::vector<int> vec_5(1000000);
-	std::cout << "Elapsed: " << generator(vec_5) << "ns" << std::endl;
-
-	std::cout << "Generating vector 6..." << std::endl;
 	std::vector<int> vec_6(1000000);
-	std::cout << "Elapsed: " << generator(vec_6) << "ns" << std::endl;
-
-	std::cout << "Generating vector 7..." << std::endl;
 	std::vector<int> vec_7(1000000);
-	std::cout << "Elapsed: " << generator(vec_7) << "ns" << std::endl;
-
-	std::cout << "Generating vector 8..." << std::endl;
 	std::vector<int> vec_8(1000000);
-	std::cout << "Elapsed: " << generator(vec_8) << "ns" << std::endl;
+
+	std::cout << "Elapsed on vector 1: " << generator(vec_1) << "ns" << std::endl;
+	std::cout << "Elapsed on vector 2: " << generator(vec_2) << "ns" << std::endl;
+	std::cout << "Elapsed on vector 3: " << generator(vec_3) << "ns" << std::endl;
+	std::cout << "Elapsed on vector 4: " << generator(vec_4) << "ns" << std::endl;
+	std::cout << "Elapsed on vector 5: " << generator(vec_5) << "ns" << std::endl;
+	std::cout << "Elapsed on vector 6: " << generator(vec_6) << "ns" << std::endl;
+	std::cout << "Elapsed on vector 7: " << generator(vec_7) << "ns" << std::endl;
+	std::cout << "Elapsed on vector 8: " << generator(vec_8) << "ns" << std::endl;
 
 	// Sorting first four vectors (without concurrency)
 	
@@ -86,31 +71,26 @@ int main()
 		threadpool_1.new_task(task_3);
 		threadpool_1.new_task(task_4);
 
-		std::cout << "Sorting first four vectors... " << std::endl;
+		std::cout << "Sorting first four vectors...\n";
+
 		start_timer = std::chrono::high_resolution_clock::now();
 
 		threadpool_1.run();
 
-		std::cout << "Sorting vector 1..." << std::endl;
 		while (!task_1.ready());
-		std::cout << "Elapsed: " << task_1.result() << "ns" << std::endl;
-
-		std::cout << "Sorting vector 2..." << std::endl;
 		while (!task_2.ready());
-		std::cout << "Elapsed: " << task_2.result() << "ns" << std::endl;
-
-		std::cout << "Sorting vector 3..." << std::endl;
 		while (!task_3.ready());
-		std::cout << "Elapsed: " << task_3.result() << "ns" << std::endl;
-
-		std::cout << "Sorting vector 4..." << std::endl;
 		while (!task_4.ready());
-		std::cout << "Elapsed: " << task_4.result() << "ns" << std::endl;
 
 		stop_timer = std::chrono::high_resolution_clock::now();
-		std::cout << "Elapsed on first four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << std::endl;
-	}
 
+		std::cout << "Elapsed on vector 1: " << task_1.result() << "ns" << std::endl;
+		std::cout << "Elapsed on vector 2: " << task_2.result() << "ns" << std::endl;
+		std::cout << "Elapsed on vector 3: " << task_3.result() << "ns" << std::endl;
+		std::cout << "Elapsed on vector 4: " << task_4.result() << "ns" << std::endl;
+		std::cout << "Elapsed on first four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << "ns" << std::endl;
+	}
+	
 	// Sorting second four vectors (with concurrency)
 
 	{
@@ -125,34 +105,29 @@ int main()
 		threadpool_2.new_sync_task(task_7);
 		threadpool_2.new_sync_task(task_8);
 
-		while (threadpool_2.synced() != 4)
+		while (threadpool_2.sync_ready() != 4)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 
-		std::cout << "Sorting second four vectors... " << std::endl;
+		std::cout << "Sorting second four vectors...\n";
+
 		start_timer = std::chrono::high_resolution_clock::now();
 
-		threadpool_2.run_synced();
+		threadpool_2.sync_run();
 
-		std::cout << "Sorting vector 5..." << std::endl;
 		while (!task_5.ready());
-		std::cout << "Elapsed: " << task_5.result() << "ns" << std::endl;
-
-		std::cout << "Sorting vector 6..." << std::endl;
 		while (!task_6.ready());
-		std::cout << "Elapsed: " << task_6.result() << "ns" << std::endl;
-
-		std::cout << "Sorting vector 7..." << std::endl;
 		while (!task_7.ready());
-		std::cout << "Elapsed: " << task_7.result() << "ns" << std::endl;
-
-		std::cout << "Sorting vector 8..." << std::endl;
 		while (!task_8.ready());
-		std::cout << "Elapsed: " << task_8.result() << "ns" << std::endl;
 
 		stop_timer = std::chrono::high_resolution_clock::now();
-		std::cout << "Elapsed on second four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << std::endl;
+
+		std::cout << "Elapsed on vector 5: " << task_5.result() << "ns" << std::endl;
+		std::cout << "Elapsed on vector 6: " << task_6.result() << "ns" << std::endl;
+		std::cout << "Elapsed on vector 7: " << task_7.result() << "ns" << std::endl;
+		std::cout << "Elapsed on vector 8: " << task_8.result() << "ns" << std::endl;
+		std::cout << "Elapsed on second four vectors: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << "ns" << std::endl;
 	}
 
 	return 0;
