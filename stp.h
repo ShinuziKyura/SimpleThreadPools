@@ -13,7 +13,13 @@ namespace stp
 		normal = 1,
 		low = 0
 	};
-	
+
+	enum class thread_state : int
+	{
+		running = 0,
+		waiting = 1
+	};
+
 	class thread_state_t
 	{
 		enum state : int
@@ -25,12 +31,6 @@ namespace stp
 		};
 
 		friend class threadpool;
-	};
-
-	enum class thread_state : int
-	{
-		running = 0,
-		waiting = 1
 	};
 
 	template <class ReturnType>
