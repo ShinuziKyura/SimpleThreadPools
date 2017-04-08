@@ -6,6 +6,14 @@
 
 namespace stp
 {
+	enum class task_priority : unsigned int
+	{
+		maximum = std::numeric_limits<unsigned int>::max(),
+		high = 2,
+		normal = 1,
+		low = 0
+	};
+	
 	class thread_state_t
 	{
 		enum state : int
@@ -23,14 +31,6 @@ namespace stp
 	{
 		running = 0,
 		waiting = 1
-	};
-
-	enum class task_priority : unsigned int
-	{
-		maximum = std::numeric_limits<unsigned int>::max(),
-		high = 2,
-		normal = 1,
-		low = 0
 	};
 
 	template <class ReturnType>
