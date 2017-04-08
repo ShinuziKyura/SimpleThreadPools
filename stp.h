@@ -25,15 +25,23 @@ namespace stp
 		waiting = 1
 	};
 
+	enum class task_priority : unsigned int
+	{
+		maximum = std::numeric_limits<unsigned int>::max(),
+		high = 2,
+		normal = 1,
+		low = 0
+	};
+
 	template <class ReturnType>
 	class task
 	{
 	public:
-		bool running()
+		bool running() const
 		{
 			return running_;
 		}
-		bool ready()
+		bool ready() const
 		{
 			return result_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 		}
@@ -49,7 +57,7 @@ namespace stp
 
 		task<ReturnType>() = delete;
 		template <class FuncType, class ... ArgType>
-		task<ReturnType>(FuncType && func, ArgType && ... args) : 
+		task<ReturnType>(FuncType && func, ArgType && ... args) :
 			running_(false),
 			package_(std::bind(std::forward<FuncType>(func), std::forward<ArgType>(args) ...)),
 			task_([this] { running_ = true; package_(); running_ = false; }),
@@ -79,13 +87,18 @@ namespace stp
 	{
 	public:
 		template <class ReturnType>
-		void new_task(task<ReturnType> & task)
+		void new_task(task<ReturnType> & task, task_priority const priority = task_priority::normal)
+		{
+			new_task(task, static_cast<unsigned int const>(priority));
+		}
+		template <class ReturnType>
+		void new_task(task<ReturnType> & task, unsigned int const priority)
 		{
 			if (thread_state_ != thread_state_t::finalizing)
 			{
 				thread_lock_.lock();
 
-				task_queue_.emplace(&task.task_, false);
+				task_queue_.emplace(&task.task_, false, priority);
 
 				thread_lock_.unlock();
 
@@ -96,13 +109,18 @@ namespace stp
 			}
 		}
 		template <class ReturnType>
-		void new_sync_task(task<ReturnType> & task)
+		void new_sync_task(task<ReturnType> & task, task_priority const priority = task_priority::normal)
+		{
+			new_sync_task(task, static_cast<unsigned int const>(priority));
+		}
+		template <class ReturnType>
+		void new_sync_task(task<ReturnType> & task, unsigned int const priority)
 		{
 			if (thread_state_ != thread_state_t::finalizing)
 			{
 				thread_lock_.lock();
 
-				task_queue_.emplace(&task.task_, true);
+				task_queue_.emplace(&task.task_, true, priority);
 
 				thread_lock_.unlock();
 
@@ -110,7 +128,7 @@ namespace stp
 				{
 					thread_alert_.notify_one();
 				}
-			}			
+			}
 		}
 		void sync_run()
 		{
@@ -162,27 +180,27 @@ namespace stp
 				thread_sync_alert_.notify_all();
 			}
 		}
-		size_t ready()
+		size_t ready() const
 		{
 			return thread_ready_;
 		}
-		size_t running()
+		size_t running() const
 		{
 			return thread_running_;
-		}				
-		size_t sync_ready()
+		}
+		size_t sync_ready() const
 		{
 			return thread_sync_ready_;
 		}
-		size_t sync_running()
+		size_t sync_running() const
 		{
 			return thread_sync_running_;
 		}
-		size_t size()
+		size_t size() const
 		{
 			return (thread_state_ != thread_state_t::finalizing ? thread_number_ : size_t());
 		}
-		bool available()
+		bool available() const
 		{
 			return thread_ready_ != 0;
 		}
@@ -224,12 +242,55 @@ namespace stp
 			}
 		}
 	private:
+		struct task_
+		{
+			std::function<void()> * function_;
+			bool sync_;
+			unsigned int priority_;
+			std::chrono::high_resolution_clock::time_point age_;
+
+			task_(std::function<void()> * function = nullptr, bool const sync = false, unsigned int const priority = 1) :
+				function_(function),
+				sync_(sync),
+				priority_(priority),
+				age_(std::chrono::high_resolution_clock::now())
+			{
+			}
+			task_ & operator=(task_ const & task)
+			{
+				function_ = task.function_;
+				sync_ = task.sync_;
+				priority_ = task.priority_;
+				age_ = task.age_;
+				return *this;
+			}
+
+			void operator()()
+			{
+				(*function_)();
+				function_ = nullptr;
+			}
+		};
+		struct task_comparator_
+		{
+			task_comparator_() = default;
+
+			bool operator()(task_ const & task_1, task_ const & task_2)
+			{
+				if (task_1.priority_ == task_2.priority_)
+				{
+					return task_1.age_ > task_2.age_;
+				}
+				return task_1.priority_ < task_2.priority_;
+			}
+		};
+
 		size_t const thread_number_;
 		std::atomic<size_t> thread_ready_;
 		std::atomic<size_t> thread_running_;
 		std::atomic<size_t> thread_sync_ready_;
 		std::atomic<size_t> thread_sync_running_;
-		std::queue<std::pair<std::function<void()> *, bool>> task_queue_;
+		std::priority_queue<task_, std::deque<task_>, task_comparator_> task_queue_;
 		std::deque<std::thread> thread_array_;
 		std::mutex thread_lock_;
 		std::condition_variable thread_alert_;
@@ -241,7 +302,7 @@ namespace stp
 
 		void threadpool__()
 		{
-			std::pair<std::function<void()> *, bool> task(nullptr, false);
+			task_ task;
 			std::mutex sync_mutex;
 			std::unique_lock<std::mutex> lock(thread_lock_);
 			std::unique_lock<std::mutex> sync_lock(sync_mutex);
@@ -267,9 +328,9 @@ namespace stp
 						case thread_state_t::running:
 							if (!task_queue_.empty())
 							{
-								if (!task.first)
+								if (!task.function_)
 								{
-									task = task_queue_.front();
+									task = task_queue_.top();
 									task_queue_.pop();
 								}
 							}
@@ -278,13 +339,13 @@ namespace stp
 								break;
 							}
 
-							if (task.first && !task.second)
+							if (task.function_ && !task.sync_)
 							{
-								threadrun__(task.first, lock);
+								threadrun__(task, lock);
 							}
-							else if (task.first && task.second)
+							else if (task.function_ && task.sync_)
 							{
-								threadsync__(task.first, lock, sync_lock);
+								threadsync__(task, lock, sync_lock);
 							}
 							else
 							{
@@ -295,9 +356,9 @@ namespace stp
 						case thread_state_t::waiting:
 							if (!task_queue_.empty())
 							{
-								if (!task.first)
+								if (!task.function_)
 								{
-									task = task_queue_.front();
+									task = task_queue_.top();
 									task_queue_.pop();
 								}
 							}
@@ -306,9 +367,9 @@ namespace stp
 								break;
 							}
 
-							if (task.first && task.second)
+							if (task.function_ && task.sync_)
 							{
-								threadsync__(task.first, lock, sync_lock);
+								threadsync__(task, lock, sync_lock);
 							}
 							else
 							{
@@ -319,9 +380,9 @@ namespace stp
 						case thread_state_t::finalizing:
 							if (!task_queue_.empty())
 							{
-								if (!task.first)
+								if (!task.function_)
 								{
-									task = task_queue_.front();
+									task = task_queue_.top();
 									task_queue_.pop();
 								}
 							}
@@ -330,9 +391,9 @@ namespace stp
 								break;
 							}
 
-							if (task.first)
+							if (task.function_)
 							{
-								threadrun__(task.first, lock);
+								threadrun__(task, lock);
 							}
 							else
 							{
@@ -349,25 +410,24 @@ namespace stp
 
 			--thread_ready_;
 		}
-		void threadrun__(std::function<void()> * & task, std::unique_lock<std::mutex> & lock)
+		void threadrun__(task_ & task, std::unique_lock<std::mutex> & lock)
 		{
 			lock.unlock();
 			--thread_ready_;
-			++thread_running_;			
+			++thread_running_;
 
-			(*task)();
-			task = nullptr;
-			
+			task();
+
 			--thread_running_;
 			++thread_ready_;
 			lock.lock();
 		}
-		void threadsync__(std::function<void()> * & task, std::unique_lock<std::mutex> & lock,
+		void threadsync__(task_ & task, std::unique_lock<std::mutex> & lock,
 			std::unique_lock<std::mutex> & sync_lock)
 		{
 			lock.unlock();
 			--thread_ready_;
-			++thread_sync_ready_;			
+			++thread_sync_ready_;
 
 			while (thread_state_ != thread_state_t::terminating)
 			{
@@ -398,8 +458,7 @@ namespace stp
 							--thread_sync_ready_;
 							++thread_sync_running_;
 
-							(*task)();
-							task = nullptr;
+							task();
 
 							--thread_sync_running_;
 
@@ -409,10 +468,9 @@ namespace stp
 					case thread_state_t::waiting:
 						continue;
 					case thread_state_t::finalizing:
-						(*task)();
-						task = nullptr;
+						task();
 
-					case thread_state_t::terminating:						
+					case thread_state_t::terminating:
 						--thread_sync_ready_;
 
 						break;

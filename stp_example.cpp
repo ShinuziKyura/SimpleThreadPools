@@ -89,8 +89,8 @@ int main()
 
 		threadpool_1.new_task(task_1);
 		threadpool_1.new_task(task_2);
-		threadpool_1.new_task(task_3);
-		threadpool_1.new_task(task_4);
+		threadpool_1.new_task(task_3, stp::task_priority::normal);
+		threadpool_1.new_task(task_4, 1);
 
 		std::cout << "Sorting first four vectors...\n[Without concurrency]\n";
 
@@ -125,8 +125,8 @@ int main()
 
 		threadpool_2.new_sync_task(task_5);
 		threadpool_2.new_sync_task(task_6);
-		threadpool_2.new_sync_task(task_7);
-		threadpool_2.new_sync_task(task_8);
+		threadpool_2.new_sync_task(task_7, stp::task_priority::normal);
+		threadpool_2.new_sync_task(task_8, 1);
 
 		while (threadpool_2.sync_ready() != 4)
 		{
