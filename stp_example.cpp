@@ -1,4 +1,4 @@
-#include "stp.h"
+#include "stp.hpp"
 
 #include <iostream>
 #include <algorithm>
