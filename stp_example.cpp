@@ -116,7 +116,7 @@ int main()
 	// Sorting second four vectors (with concurrency)
 
 	{
-		stp::threadpool threadpool_2(multiple_threads, stp::thread_state::running);
+		stp::threadpool threadpool_2(multiple_threads, stp::threadpool_state::running);
 
 		stp::task<double> task_5(sorter, std::ref(vec_5));
 		stp::task<double> task_6(sorter, std::ref(vec_6));
