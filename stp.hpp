@@ -137,7 +137,7 @@ namespace stp
 			{
 				threadpool_lock_.lock();
 				threadpool_state_ = threadpool_state_t::running;
-				threadpool_state_changed_ = threadpool_number_;
+				threadpool_state_changed_ = threadpool_ready_ + threadpool_sync_ready_;
 				threadpool_lock_.unlock();
 
 				threadpool_alert_.notify_all();
@@ -150,7 +150,7 @@ namespace stp
 			{
 				threadpool_lock_.lock();
 				threadpool_state_ = threadpool_state_t::waiting;
-				threadpool_state_changed_ = threadpool_number_;
+				threadpool_state_changed_ = threadpool_ready_ + threadpool_sync_ready_;
 				threadpool_lock_.unlock();				
 
 				threadpool_alert_.notify_all();
@@ -194,10 +194,7 @@ namespace stp
 		threadpool() = delete;
 		threadpool(size_t threadpool_number, threadpool_state threadpool_state = threadpool_state::waiting) :
 			threadpool_number_(threadpool_number > 0 ? threadpool_number : static_cast<size_t>(std::thread::hardware_concurrency())),
-			threadpool_active_(true),
-			threadpool_state_(static_cast<threadpool_state_t>((static_cast<int>(threadpool_state) & 0xFFFFFFFE) == 0 ?
-				threadpool_state :
-				threadpool_state::waiting)),			
+			threadpool_state_(static_cast<threadpool_state_t>(threadpool_state)),
 			threadpool_ready_(0),
 			threadpool_running_(0),
 			threadpool_sync_ready_(0),
@@ -210,7 +207,6 @@ namespace stp
 			{
 				thread_array_.emplace_back(&threadpool::threadpool__, this);
 			}
-			thread_array_.emplace_back(&threadpool::threadpool_monitor__, this);
 		}
 		threadpool(threadpool const &) = delete;
 		threadpool & operator=(threadpool const &) = delete;
@@ -220,7 +216,7 @@ namespace stp
 		{
 			threadpool_lock_.lock();
 			threadpool_state_ = threadpool_state_t::terminating;
-			threadpool_state_changed_ = -1;
+			threadpool_state_changed_ = threadpool_number_;
 			threadpool_lock_.unlock();
 
 			threadpool_alert_.notify_all();
@@ -230,8 +226,6 @@ namespace stp
 			{
 				thread_array_[n].join();
 			}
-			threadpool_active_ = false;
-			thread_array_[threadpool_number_].join();
 		}
 	private:
 		enum class threadpool_state_t : int
@@ -297,15 +291,14 @@ namespace stp
 	#endif
 #elif defined(_MSC_VER)
 	#if _MSC_VER >= 1900
-		typedef std::shared_mutex shared_mutex;
+		typedef std::shared_mutex shared_mutex_t;
 	#endif
 #elif defined (TODO__)
 	// Not yet defined
 #endif
-		typedef std::condition_variable_any condition_variable;
+		typedef std::condition_variable_any condition_variable_t;
 
-		size_t const threadpool_number_;		
-		bool threadpool_active_;
+		size_t const threadpool_number_;
 		threadpool_state_t threadpool_state_;
 
 		thread_array_t thread_array_;
@@ -320,22 +313,22 @@ namespace stp
 		std::atomic_size_t threadpool_sync_executed_;
 		std::atomic_size_t threadpool_state_changed_;
 
-		shared_mutex threadpool_lock_;
-		shared_mutex threadpool_sync_lock_;
-		condition_variable threadpool_alert_;
-		condition_variable threadpool_sync_alert_;
+		shared_mutex_t threadpool_lock_;
+		shared_mutex_t threadpool_sync_lock_;
+		condition_variable_t threadpool_alert_;
+		condition_variable_t threadpool_sync_alert_;
 
 		void threadpool__()
 		{
 			task_t task;
 			threadpool_state_t state = threadpool_state_;
 
-			std::unique_lock<shared_mutex> unique_lock(threadpool_lock_, std::defer_lock);
-			std::shared_lock<shared_mutex> shared_lock(threadpool_lock_);			
+			std::unique_lock<shared_mutex_t> unique_lock(threadpool_lock_, std::defer_lock);
+			std::shared_lock<shared_mutex_t> shared_lock(threadpool_lock_);			
 
 			++threadpool_ready_;
 
-			while (state != threadpool_state_t::terminating)
+			while (threadpool_state_ != threadpool_state_t::terminating)
 			{
 				while (!threadpool_task_emplaced_ && !threadpool_state_changed_)
 				{
@@ -354,7 +347,7 @@ namespace stp
 
 				while (true)
 				{
-					switch (state)
+					switch (threadpool_state_)
 					{
 						case threadpool_state_t::running:
 							shared_lock.unlock();
@@ -362,7 +355,13 @@ namespace stp
 
 							if (threadpool_task_emplaced_)
 							{
-								threadpool_get__(task);								
+								if (!task.function_)
+								{
+									--threadpool_task_emplaced_;
+
+									task = task_queue_.top();
+									task_queue_.pop();
+								}
 							}
 							else
 							{
@@ -397,7 +396,13 @@ namespace stp
 
 							if (threadpool_task_emplaced_)
 							{
-								threadpool_get__(task);
+								if (!task.function_)
+								{
+									--threadpool_task_emplaced_;
+
+									task = task_queue_.top();
+									task_queue_.pop();
+								}
 							}
 							else
 							{
@@ -428,7 +433,13 @@ namespace stp
 
 							if (threadpool_task_emplaced_)
 							{
-								threadpool_get__(task);
+								if (!task.function_)
+								{
+									--threadpool_task_emplaced_;
+
+									task = task_queue_.top();
+									task_queue_.pop();
+								}
 							}
 							else
 							{
@@ -462,16 +473,6 @@ namespace stp
 
 			--threadpool_ready_;
 		}
-		void threadpool_get__(task_t & task)
-		{
-			if (!task.function_)
-			{
-				--threadpool_task_emplaced_;
-
-				task = task_queue_.top();
-				task_queue_.pop();				
-			}
-		}
 		void threadpool_run__(task_t & task, bool const sync = false)
 		{
 			--(sync ? threadpool_sync_ready_ : threadpool_ready_);
@@ -487,7 +488,7 @@ namespace stp
 			--threadpool_ready_;
 			++threadpool_sync_ready_;
 
-			std::shared_lock<shared_mutex> sync_lock(threadpool_sync_lock_);
+			std::shared_lock<shared_mutex_t> sync_lock(threadpool_sync_lock_);
 
 			while (true)
 			{
@@ -506,7 +507,7 @@ namespace stp
 					}
 				}
 
-				switch (state)
+				switch (threadpool_state_)
 				{
 					case threadpool_state_t::running:
 						if (threadpool_sync_executed_)
@@ -531,32 +532,6 @@ namespace stp
 
 			--threadpool_sync_ready_;
 			++threadpool_ready_;
-		}
-		void threadpool_monitor__()
-		{
-			while (threadpool_active_)
-			{
-				while (!threadpool_task_emplaced_ && !threadpool_sync_executed_ && !threadpool_state_changed_)
-				{
-					std::this_thread::sleep_for(std::chrono::nanoseconds(999));
-				}
-
-				if (threadpool_task_emplaced_)
-				{
-					threadpool_alert_.notify_all();
-				}
-
-				if (threadpool_sync_executed_)
-				{
-					threadpool_sync_alert_.notify_all();
-				}
-
-				if (threadpool_state_changed_)
-				{
-					threadpool_alert_.notify_all();
-					threadpool_sync_alert_.notify_all();
-				}
-			}
 		}
 	};
 }
