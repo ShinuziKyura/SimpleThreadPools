@@ -89,10 +89,10 @@ namespace stp
 			if (threadpool_state_ != threadpool_state_t::finalizing)
 			{
 				threadpool_lock_.lock();
-				
+
 				task_queue_.emplace(&task.task_function_, false, static_cast<unsigned int>(priority));
 				++threadpool_task_emplaced_;
-				
+
 				threadpool_lock_.unlock();
 
 				if (threadpool_state_ == threadpool_state_t::running)
@@ -107,10 +107,10 @@ namespace stp
 			if (threadpool_state_ != threadpool_state_t::finalizing)
 			{
 				threadpool_lock_.lock();
-				
+
 				task_queue_.emplace(&task.task_function_, true, static_cast<unsigned int>(priority));
 				++threadpool_task_emplaced_;
-				
+
 				threadpool_lock_.unlock();
 
 				if (threadpool_state_ == threadpool_state_t::running)
@@ -129,9 +129,9 @@ namespace stp
 			if (threadpool_state_ == threadpool_state_t::running)
 			{
 				threadpool_sync_lock_.lock();
-				
+
 				threadpool_sync_executed_ = static_cast<size_t>(threadpool_sync_ready_);
-				
+
 				threadpool_sync_lock_.unlock();
 
 				threadpool_sync_alert_.notify_all();
@@ -143,7 +143,7 @@ namespace stp
 			{
 				threadpool_lock_.lock();
 				threadpool_sync_lock_.lock();
-				
+
 				threadpool_state_ = threadpool_state_t::running;
 				threadpool_state_changed_ = threadpool_ready_ + threadpool_sync_ready_;
 
@@ -160,7 +160,7 @@ namespace stp
 			{
 				threadpool_lock_.lock();
 				threadpool_sync_lock_.lock();
-				
+
 				threadpool_state_ = threadpool_state_t::waiting;
 				threadpool_state_changed_ = threadpool_ready_ + threadpool_sync_ready_;
 				
@@ -177,7 +177,7 @@ namespace stp
 			{
 				threadpool_lock_.lock();
 				threadpool_sync_lock_.lock();
-				
+
 				threadpool_state_ = threadpool_state_t::finalizing;
 				threadpool_state_changed_ = threadpool_number_;
 				
@@ -234,7 +234,7 @@ namespace stp
 		{
 			threadpool_lock_.lock();
 			threadpool_sync_lock_.lock();
-			
+
 			threadpool_state_ = threadpool_state_t::terminating;
 			threadpool_state_changed_ = threadpool_number_;
 			
@@ -244,9 +244,9 @@ namespace stp
 			threadpool_alert_.notify_all();
 			threadpool_sync_alert_.notify_all();
 
-			for (size_t n = 0; n < threadpool_number_; ++n)
+			for (auto & thread_array_ : thread_array_)
 			{
-				thread_array_[n].join();
+				thread_array_.join();
 			}
 		}
 	private:
@@ -301,19 +301,19 @@ namespace stp
 			}
 		};
 
-		typedef std::deque<std::thread> thread_array_t;
-		typedef std::priority_queue <task_t, std::deque<task_t>, task_comparator_t> task_queue_t;
 #if defined(__clang__)
 	// Not yet defined
 #elif defined(__GNUG__)
 	#if __cplusplus > 201402L
-		typedef std::shared_mutex shared_mutex;
+		typedef std::shared_mutex rw_mutex_t;
 	#elif __cplusplus == 201402L
-		typedef std::shared_timed_mutex shared_mutex;
+		typedef std::shared_timed_mutex rw_mutex_t;
 	#endif
 #elif defined(_MSC_VER)
-	#if _MSC_VER >= 1900
-		typedef std::shared_mutex shared_mutex_t;
+	#if _MSVC_LANG > 201402L
+		typedef std::shared_mutex rw_mutex_t;
+	#elif _MSVC_LANG == 201402L
+		typedef std::shared_timed_mutex rw_mutex_t;
 	#endif
 #elif defined (TODO__)
 	// Not yet defined
@@ -321,10 +321,9 @@ namespace stp
 		typedef std::condition_variable_any condition_variable_t;
 
 		size_t const threadpool_number_;
-		threadpool_state_t threadpool_state_;
-
-		thread_array_t thread_array_;
-		task_queue_t task_queue_;
+		std::vector<std::thread> thread_array_;
+		std::priority_queue <task_t, std::deque<task_t>, task_comparator_t> task_queue_;
+		threadpool_state_t threadpool_state_;		
 
 		std::atomic_size_t threadpool_ready_;
 		std::atomic_size_t threadpool_running_;
@@ -335,8 +334,8 @@ namespace stp
 		std::atomic_size_t threadpool_sync_executed_;
 		std::atomic_size_t threadpool_state_changed_;
 
-		shared_mutex_t threadpool_lock_;
-		shared_mutex_t threadpool_sync_lock_;
+		rw_mutex_t threadpool_lock_;
+		rw_mutex_t threadpool_sync_lock_;
 		condition_variable_t threadpool_alert_;
 		condition_variable_t threadpool_sync_alert_;
 
@@ -345,8 +344,8 @@ namespace stp
 			task_t task;
 			threadpool_state_t state = threadpool_state_;
 
-			std::unique_lock<shared_mutex_t> unique_lock(threadpool_lock_, std::defer_lock);
-			std::shared_lock<shared_mutex_t> shared_lock(threadpool_lock_);			
+			std::unique_lock<rw_mutex_t> unique_lock(threadpool_lock_, std::defer_lock);
+			std::shared_lock<rw_mutex_t> shared_lock(threadpool_lock_);			
 
 			++threadpool_ready_;
 
@@ -411,6 +410,7 @@ namespace stp
 							}
 
 							shared_lock.lock();
+
 							continue;
 						case threadpool_state_t::waiting:
 							shared_lock.unlock();
@@ -448,6 +448,7 @@ namespace stp
 							}
 
 							shared_lock.lock();
+
 							continue;
 						case threadpool_state_t::finalizing:
 							shared_lock.unlock();
@@ -485,6 +486,7 @@ namespace stp
 							}
 
 							shared_lock.lock();
+
 							continue;
 						case threadpool_state_t::terminating:
 							break;
@@ -510,7 +512,7 @@ namespace stp
 			--threadpool_ready_;
 			++threadpool_sync_ready_;
 
-			std::shared_lock<shared_mutex_t> sync_lock(threadpool_sync_lock_);
+			std::shared_lock<rw_mutex_t> sync_lock(threadpool_sync_lock_);
 
 			while (true)
 			{
