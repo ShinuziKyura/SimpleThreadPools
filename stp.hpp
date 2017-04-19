@@ -89,8 +89,10 @@ namespace stp
 			if (threadpool_state_ != threadpool_state_t::finalizing)
 			{
 				threadpool_lock_.lock();
+				
 				task_queue_.emplace(&task.task_function_, false, static_cast<unsigned int>(priority));
 				++threadpool_task_emplaced_;
+				
 				threadpool_lock_.unlock();
 
 				if (threadpool_state_ == threadpool_state_t::running)
@@ -105,8 +107,10 @@ namespace stp
 			if (threadpool_state_ != threadpool_state_t::finalizing)
 			{
 				threadpool_lock_.lock();
+				
 				task_queue_.emplace(&task.task_function_, true, static_cast<unsigned int>(priority));
 				++threadpool_task_emplaced_;
+				
 				threadpool_lock_.unlock();
 
 				if (threadpool_state_ == threadpool_state_t::running)
@@ -125,7 +129,9 @@ namespace stp
 			if (threadpool_state_ == threadpool_state_t::running)
 			{
 				threadpool_sync_lock_.lock();
+				
 				threadpool_sync_executed_ = static_cast<size_t>(threadpool_sync_ready_);
+				
 				threadpool_sync_lock_.unlock();
 
 				threadpool_sync_alert_.notify_all();
@@ -136,9 +142,13 @@ namespace stp
 			if (threadpool_state_ == threadpool_state_t::waiting)
 			{
 				threadpool_lock_.lock();
+				threadpool_sync_lock_.lock();
+				
 				threadpool_state_ = threadpool_state_t::running;
 				threadpool_state_changed_ = threadpool_ready_ + threadpool_sync_ready_;
+
 				threadpool_lock_.unlock();
+				threadpool_sync_lock_.unlock();
 
 				threadpool_alert_.notify_all();
 				threadpool_sync_alert_.notify_all();
@@ -149,9 +159,13 @@ namespace stp
 			if (threadpool_state_ == threadpool_state_t::running)
 			{
 				threadpool_lock_.lock();
+				threadpool_sync_lock_.lock();
+				
 				threadpool_state_ = threadpool_state_t::waiting;
 				threadpool_state_changed_ = threadpool_ready_ + threadpool_sync_ready_;
-				threadpool_lock_.unlock();				
+				
+				threadpool_lock_.unlock();
+				threadpool_sync_lock_.unlock();
 
 				threadpool_alert_.notify_all();
 				threadpool_sync_alert_.notify_all();
@@ -162,9 +176,13 @@ namespace stp
 			if (threadpool_state_ != threadpool_state_t::finalizing)
 			{
 				threadpool_lock_.lock();
+				threadpool_sync_lock_.lock();
+				
 				threadpool_state_ = threadpool_state_t::finalizing;
 				threadpool_state_changed_ = threadpool_number_;
+				
 				threadpool_lock_.unlock();
+				threadpool_sync_lock_.unlock();
 
 				threadpool_alert_.notify_all();
 				threadpool_sync_alert_.notify_all();
@@ -215,9 +233,13 @@ namespace stp
 		~threadpool()
 		{
 			threadpool_lock_.lock();
+			threadpool_sync_lock_.lock();
+			
 			threadpool_state_ = threadpool_state_t::terminating;
 			threadpool_state_changed_ = threadpool_number_;
+			
 			threadpool_lock_.unlock();
+			threadpool_sync_lock_.unlock();
 
 			threadpool_alert_.notify_all();
 			threadpool_sync_alert_.notify_all();
