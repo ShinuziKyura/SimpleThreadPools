@@ -304,19 +304,17 @@ namespace stp
 #if defined(__clang__)
 	// Not yet defined
 #elif defined(__GNUG__)
-	#if __cplusplus > 201402L
+	#if __cplusplus >= 201402L && _HAS_SHARED_MUTEX == 1
 		typedef std::shared_mutex rw_mutex_t;
 	#elif __cplusplus == 201402L
 		typedef std::shared_timed_mutex rw_mutex_t;
 	#endif
 #elif defined(_MSC_VER)
-	#if _MSVC_LANG > 201402L
+	#if _MSVC_LANG >= 201402L && _HAS_SHARED_MUTEX == 1
 		typedef std::shared_mutex rw_mutex_t;
 	#elif _MSVC_LANG == 201402L
 		typedef std::shared_timed_mutex rw_mutex_t;
 	#endif
-#elif defined (TODO__)
-	// Not yet defined
 #endif
 		typedef std::condition_variable_any condition_variable_t;
 
