@@ -61,9 +61,9 @@ namespace stp
 		}
 
 		task<ReturnType>() = delete;
-		template <class FuncType, class ... ArgType>
-		task<ReturnType>(FuncType && func, ArgType && ... arg) :
-			task_package_(std::bind(std::forward<FuncType>(func), std::forward<ArgType>(arg) ...)), // Eventually i'll have to do this properly
+		template <class FuncType, class ... ArgsType>
+		task<ReturnType>(FuncType && func, ArgsType && ... args) :
+			task_package_(std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...)), // Eventually i'll have to do this properly
 			task_function_([this] { task_package_(); }),
 			task_future_(task_package_.get_future()),
 			task_result_(nullptr)
@@ -152,17 +152,17 @@ namespace stp
 				}
 			}
 		}
-		template <class FuncType, class ... ArgType>
-		void new_task(FuncType && func, ArgType && ... arg)
+		template <class FuncType, class ... ArgsType>
+		void new_task(FuncType && func, ArgsType && ... args)
 		{
-			new_task(std::forward<FuncType>(func), task_priority::normal, std::forward<ArgType>(arg) ...);
+			new_task(std::forward<FuncType>(func), task_priority::normal, std::forward<ArgsType>(args) ...);
 		}
-		template <class FuncType, class ... ArgType>
-		void new_task(FuncType && func, task_priority const priority, ArgType && ... arg)
+		template <class FuncType, class ... ArgsType>
+		void new_task(FuncType && func, task_priority const priority, ArgsType && ... args)
 		{
 			if (threadpool_state_ != threadpool_state::terminating)
 			{
-				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgType>(arg) ...);
+				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
@@ -194,17 +194,17 @@ namespace stp
 				}
 			}
 		}
-		template <class FuncType, class ... ArgType>
-		void new_sync_task(FuncType && func, ArgType && ... arg)
+		template <class FuncType, class ... ArgsType>
+		void new_sync_task(FuncType && func, ArgsType && ... args)
 		{
-			new_sync_task(std::forward<FuncType>(func), task_priority::normal, std::forward<ArgType>(arg) ...);
+			new_sync_task(std::forward<FuncType>(func), task_priority::normal, std::forward<ArgsType>(args) ...);
 		}
-		template <class FuncType, class ... ArgType>
-		void new_sync_task(FuncType && func, task_priority const priority, ArgType && ... arg)
+		template <class FuncType, class ... ArgsType>
+		void new_sync_task(FuncType && func, task_priority const priority, ArgsType && ... args)
 		{
 			if (threadpool_state_ != threadpool_state::terminating)
 			{
-				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgType>(arg) ...);
+				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
