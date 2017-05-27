@@ -6,7 +6,7 @@
 #include <random>
 
 #define OUTPUT_TO_FILE_ 0
-#define TEST_ITERATIONS_ 1000
+#define TEST_ITERATIONS_ 1
 
 std::random_device seed;
 std::mt19937 generate(seed());
@@ -128,23 +128,23 @@ int main()
 										// Default: stp::threadpool_state::waiting
 										// Default: true
 
-		stp::task<double> task_00(sorter, std::ref(vec_00));
-		stp::task<double> task_01(sorter, std::ref(vec_01));
-		stp::task<double> task_02(sorter, std::ref(vec_02));
-		stp::task<double> task_03(sorter, std::ref(vec_03));
-		stp::task<double> task_04(sorter, std::ref(vec_04));
-		stp::task<double> task_05(sorter, std::ref(vec_05));
-		stp::task<double> task_06(sorter, std::ref(vec_06));
-		stp::task<double> task_07(sorter, std::ref(vec_07));
-		stp::task<double> task_08(sorter, std::ref(vec_08));
-		stp::task<double> task_09(sorter, std::ref(vec_09));
-		stp::task<double> task_10(sorter, std::ref(vec_10));
-		stp::task<double> task_11(sorter, std::ref(vec_11));
-		stp::task<double> task_12(sorter, std::ref(vec_12));
-		stp::task<double> task_13(sorter, std::ref(vec_13));
-		stp::task<double> task_14(sorter, std::ref(vec_14));
-		stp::task<double> task_15(sorter, std::ref(vec_15));
-		stp::task<double> task_16(sorter, std::ref(vec_16));
+		stp::task<double> task_00(sorter, (vec_00));
+		stp::task<double> task_01(sorter, (vec_01));
+		stp::task<double> task_02(sorter, (vec_02));
+		stp::task<double> task_03(sorter, (vec_03));
+		stp::task<double> task_04(sorter, (vec_04));
+		stp::task<double> task_05(sorter, (vec_05));
+		stp::task<double> task_06(sorter, (vec_06));
+		stp::task<double> task_07(sorter, (vec_07));
+		stp::task<double> task_08(sorter, (vec_08));
+		stp::task<double> task_09(sorter, (vec_09));
+		stp::task<double> task_10(sorter, (vec_10));
+		stp::task<double> task_11(sorter, (vec_11));
+		stp::task<double> task_12(sorter, (vec_12));
+		stp::task<double> task_13(sorter, (vec_13));
+		stp::task<double> task_14(sorter, (vec_14));
+		stp::task<double> task_15(sorter, (vec_15));
+		stp::task<double> task_16(sorter, (vec_16));
 
 		task_00();
 		auto sleep_time = std::chrono::nanoseconds(static_cast<uint32_t>(task_00.result() * 2 / std::thread::hardware_concurrency()));
