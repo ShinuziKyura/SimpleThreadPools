@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <random>
 
+#define OUTPUT_TO_FILE_ 0
+#define TEST_ITERATIONS_ 1000
+
 std::random_device seed;
 std::mt19937 generate(seed());
 std::uniform_int_distribution<int> random_list(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
@@ -32,11 +35,14 @@ double sorter(std::vector<int> & vec)
 
 int main()
 {
-//	std::fstream fout("STPtests.txt", std::ios::in | std::ios::out | std::ios::trunc);
-//	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
+	std::setvbuf(stdout, nullptr, _IOFBF, BUFSIZ);
 
+#if (OUTPUT_TO_FILE_ == 1)
+	std::fstream fout("stp_tests.txt", std::ios::out | std::ios::trunc);
+	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
+#endif
+	
 	std::cout << std::scientific;
-	std::cout.precision(5);
 
 	// Generating vectors	
 
@@ -58,7 +64,7 @@ int main()
 	std::vector<int> vec_15(1000000);
 	std::vector<int> vec_16(1000000);
 
-	std::cout << "Generating 16 vectors...\n";
+	std::cout << "Generating 16 vectors...\n\n";
 
 	stp::task<double> task_00(generator, std::ref(vec_00));
 	stp::task<double> task_01(generator, std::ref(vec_01));
@@ -113,7 +119,7 @@ int main()
 	std::cout << "Elapsed on vector 15: " << task_15.result() << "ns\n";
 	std::cout << "Elapsed on vector 16: " << task_16.result() << "ns\n";
 
-	for (size_t n = 1; n <= 1; ++n) // Pretty good results so far, rewrite tests
+	for (size_t n = 1; n <= TEST_ITERATIONS_; ++n)
 	{
 		std::cout << "\nn = " << n << "\n\n";
 		std::cout << "Sorting 16 vectors...\n";
@@ -122,31 +128,36 @@ int main()
 										// Default: stp::threadpool_state::waiting
 										// Default: true
 
-		stp::task<double> task_00(sorter, (vec_00));
-		stp::task<double> task_01(sorter, (vec_01));
-		stp::task<double> task_02(sorter, (vec_02));
-		stp::task<double> task_03(sorter, (vec_03));
-		stp::task<double> task_04(sorter, (vec_04));
-		stp::task<double> task_05(sorter, (vec_05));
-		stp::task<double> task_06(sorter, (vec_06));
-		stp::task<double> task_07(sorter, (vec_07));
-		stp::task<double> task_08(sorter, (vec_08));
-		stp::task<double> task_09(sorter, (vec_09));
-		stp::task<double> task_10(sorter, (vec_10));
-		stp::task<double> task_11(sorter, (vec_11));
-		stp::task<double> task_12(sorter, (vec_12));
-		stp::task<double> task_13(sorter, (vec_13));
-		stp::task<double> task_14(sorter, (vec_14));
-		stp::task<double> task_15(sorter, (vec_15));
-		stp::task<double> task_16(sorter, (vec_16));
+		stp::task<double> task_00(sorter, std::ref(vec_00));
+		stp::task<double> task_01(sorter, std::ref(vec_01));
+		stp::task<double> task_02(sorter, std::ref(vec_02));
+		stp::task<double> task_03(sorter, std::ref(vec_03));
+		stp::task<double> task_04(sorter, std::ref(vec_04));
+		stp::task<double> task_05(sorter, std::ref(vec_05));
+		stp::task<double> task_06(sorter, std::ref(vec_06));
+		stp::task<double> task_07(sorter, std::ref(vec_07));
+		stp::task<double> task_08(sorter, std::ref(vec_08));
+		stp::task<double> task_09(sorter, std::ref(vec_09));
+		stp::task<double> task_10(sorter, std::ref(vec_10));
+		stp::task<double> task_11(sorter, std::ref(vec_11));
+		stp::task<double> task_12(sorter, std::ref(vec_12));
+		stp::task<double> task_13(sorter, std::ref(vec_13));
+		stp::task<double> task_14(sorter, std::ref(vec_14));
+		stp::task<double> task_15(sorter, std::ref(vec_15));
+		stp::task<double> task_16(sorter, std::ref(vec_16));
 
 		task_00();
-		auto sleep_time = std::chrono::nanoseconds(static_cast<uint32_t>(task_00.result() / 5.0));
-
-		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
-		std::cout << "\tThreadpool size: " << threadpool.size() << "\n";
+		auto sleep_time = std::chrono::nanoseconds(static_cast<uint32_t>(task_00.result() * 2 / std::thread::hardware_concurrency()));
 
 		// ===== First test =====
+
+		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
+		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ? 
+											  "running\n" : 
+											  (threadpool.state() == stp::threadpool_state::waiting ? 
+											  "waiting\n" : 
+											  "terminating\n"));
+		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
 
 		std::cout << "\tFirst test - Single thread\n";
 
@@ -195,7 +206,13 @@ int main()
 
 		while (threadpool.size() != 4);
 
-		std::cout << "\tThreadpool size: " << threadpool.size() << "\n";
+		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
+		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
+											  "running\n" :
+											  (threadpool.state() == stp::threadpool_state::waiting ?
+											  "waiting\n" :
+											  "terminating\n"));
+		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
 
 		std::cout << "\tSecond test - Multiple synchronized threads\n";
 
@@ -230,8 +247,13 @@ int main()
 
 		while (threadpool.size() != 2);
 
+		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
+		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
+											  "running\n" :
+											  (threadpool.state() == stp::threadpool_state::waiting ?
+											  "waiting\n" :
+											  "terminating\n"));
 		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
-		std::cout << "\tThreadpool size: " << threadpool.size() << "\n";
 
 		std::cout << "\tThird test - Overworked threads\n";
 
@@ -300,13 +322,21 @@ int main()
 
 		std::cout << "\tElapsed on third test: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << "ns\n";
 
+		threadpool.wait();
+
 		threadpool.new_threads(6);
 
 		// ===== Fourth test =====
 
 		while (threadpool.size() != 8);
 
-		std::cout << "\tThreadpool size: " << threadpool.size() << "\n";
+		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
+		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
+											  "running\n" :
+											  (threadpool.state() == stp::threadpool_state::waiting ?
+											  "waiting\n" :
+											  "terminating\n"));
+		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
 
 		std::cout << "\tFourth test - Underworked threads\n";
 
@@ -318,6 +348,8 @@ int main()
 		threadpool.new_task(task_16, stp::task_priority::maximum);
 
 		threadpool.notify_new_tasks();
+
+		threadpool.run();
 
 		start_timer = std::chrono::high_resolution_clock::now();
 
@@ -350,13 +382,11 @@ int main()
 
 		stop_timer = std::chrono::high_resolution_clock::now();
 
-		std::cout << "\tElapsed on fourth test: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << "ns\n";
+		std::cout << "\tElapsed on fourth test: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << "ns\n\n";
 
 		threadpool.terminate();
 
 		while (threadpool.size() != 0);
-
-		std::cout << "\tThreadpool size: " << threadpool.size() << "\n";
 
 		std::cout << "Elapsed on vector 01: " << task_01.result() << "ns\n";
 		std::cout << "Elapsed on vector 02: " << task_02.result() << "ns\n";
@@ -376,9 +406,14 @@ int main()
 		std::cout << "Elapsed on vector 16: " << task_16.result() << "ns\n";
 	}
 
-//	fout.close();
+	std::cout << "\nTesting finished\n";
 
-//	std::cout.rdbuf(cout_buffer);
+#if OUTPUT_TO_FILE_ == 1
+	fout.close();
+	std::cout.rdbuf(cout_buffer);
+#endif
+
+	std::cout << "\nPress enter to exit\n";
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
 	return 0;
