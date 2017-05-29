@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <random>
 
-#define OUTPUT_TO_FILE_ 0
-#define TEST_ITERATIONS_ 1
+#define OUTPUT_TO_FILE_ 1
+#define TEST_ITERATIONS_ 1000
 
 std::random_device seed;
 std::mt19937 generate(seed());
@@ -125,7 +125,7 @@ int main()
 		std::cout << "Sorting 16 vectors...\n";
 
 		stp::threadpool threadpool(1);	// Default: std::thread::hardware_concurrency()
-										// Default: stp::threadpool_state::waiting
+										// Default: stp::threadpool_state::running
 										// Default: true
 
 		stp::task<double> task_00(sorter, (vec_00));
@@ -175,13 +175,13 @@ int main()
 		start_timer = std::chrono::high_resolution_clock::now();
 
 		// We can wait for stp::task::result_ready() to return "true", by which time stp::task::result() shall return the value of the task
-		while (!task_01.result_ready() && !task_02.result_ready() && !task_03.result_ready() && !task_04.result_ready())
+		while (!task_01.ready() && !task_02.ready() && !task_03.ready() && !task_04.ready())
 		{
 			std::cout << "\t\tNumber of running threads: " << threadpool.running() << "\n";
 			std::this_thread::sleep_for(sleep_time);
 		}
 
-		if (task_01.result_ready()) // It should always display this message
+		if (task_01.ready()) // It should always display this message
 		{
 			std::cout << "\t\tOK - Task 01 done before other tasks\n";
 		}
@@ -190,7 +190,7 @@ int main()
 			std::cout << "\t\tError - Some task done before task 01\n";
 		}
 
-		while (!task_01.result_ready() || !task_02.result_ready() || !task_03.result_ready() || !task_04.result_ready())
+		while (!task_01.ready() || !task_02.ready() || !task_03.ready() || !task_04.ready())
 		{
 			std::cout << "\t\tNumber of running threads: " << threadpool.running() << "\n";
 			std::this_thread::sleep_for(sleep_time);
@@ -229,7 +229,7 @@ int main()
 
 		start_timer = std::chrono::high_resolution_clock::now();
 
-		while (!task_05.result_ready() || !task_06.result_ready() || !task_07.result_ready() || !task_08.result_ready())
+		while (!task_05.ready() || !task_06.ready() || !task_07.ready() || !task_08.ready())
 		{
 			std::cout << "\t\tNumber of synchronized running threads: " << threadpool.sync_running() << "\n";
 			std::this_thread::sleep_for(sleep_time);
@@ -274,13 +274,13 @@ int main()
 
 		threadpool.delete_tasks();
 
-		while (!task_09.result_ready() && !task_10.result_ready() && !task_11.result_ready() && !task_12.result_ready())
+		while (!task_09.ready() && !task_10.ready() && !task_11.ready() && !task_12.ready())
 		{
 			std::cout << "\t\tNumber of running threads: " << threadpool.running() << "\n";
 			std::this_thread::sleep_for(sleep_time);
 		}
 
-		if (task_10.result_ready() || task_12.result_ready()) // It should always display this message
+		if (task_10.ready() || task_12.ready()) // It should always display this message
 		{
 			std::cout << "\t\tOK - Tasks 10 or 12 done before other tasks\n";
 		}
@@ -293,26 +293,26 @@ int main()
 
 		std::cout << "\t\tNumber of waiting threads: " << threadpool.waiting() << "\n";
 
-		if (!task_09.result_ready())
+		if (!task_09.ready())
 		{
 			threadpool.new_task(task_09, stp::task_priority::very_low);
 		}
-		if (!task_10.result_ready())
+		if (!task_10.ready())
 		{
 			threadpool.new_task(task_10, stp::task_priority::high);
 		}
-		if (!task_11.result_ready())
+		if (!task_11.ready())
 		{
 			threadpool.new_task(task_11, stp::task_priority::low);
 		}
-		if (!task_12.result_ready())
+		if (!task_12.ready())
 		{
 			threadpool.new_task(task_12, stp::task_priority::very_high);
 		}
 
 		threadpool.notify_new_tasks();
 
-		while (!task_09.result_ready() || !task_10.result_ready() || !task_11.result_ready() || !task_12.result_ready())
+		while (!task_09.ready() || !task_10.ready() || !task_11.ready() || !task_12.ready())
 		{
 			std::cout << "\t\tNumber of running threads: " << threadpool.running() << "\n";
 			std::this_thread::sleep_for(sleep_time);
@@ -356,24 +356,24 @@ int main()
 		// Task priority is meaningless if there are more threads available than tasks
 		for (size_t n = 0; n < 4; ++n)
 		{
-			while (!task_13.result_ready() && !task_14.result_ready() && !task_15.result_ready() && !task_16.result_ready());
+			while (!task_13.ready() && !task_14.ready() && !task_15.ready() && !task_16.ready());
 
-			if (task_13.result_ready() && !task_13_check)
+			if (task_13.ready() && !task_13_check)
 			{
 				std::cout << "\t\tTask 13 done\n";
 				task_13_check = true;
 			}
-			if (task_14.result_ready() && !task_14_check)
+			if (task_14.ready() && !task_14_check)
 			{
 				std::cout << "\t\tTask 14 done\n";
 				task_14_check = true;
 			}
-			if (task_15.result_ready() && !task_15_check)
+			if (task_15.ready() && !task_15_check)
 			{
 				std::cout << "\t\tTask 15 done\n";
 				task_15_check = true;
 			}
-			if (task_16.result_ready() && !task_16_check)
+			if (task_16.ready() && !task_16_check)
 			{
 				std::cout << "\t\tTask 16 done\n";
 				task_16_check = true;
