@@ -467,7 +467,7 @@ namespace stp
 		}
 	private:
 #if defined(__clang__) && __clang_major__ >= 3
-#if __clang_minor__ >= 7 && _HAS_SHARED_MUTEX == 1
+#if ((__clang_major__ == 3 && __clang_minor__ >= 7) || __clang_major__ > 3) && _HAS_SHARED_MUTEX == 1
 		typedef std::shared_mutex rw_mutex_t;
 #elif __clang_minor__ >= 4
 		typedef std::shared_timed_mutex rw_mutex_t;
