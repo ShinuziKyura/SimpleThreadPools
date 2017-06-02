@@ -392,21 +392,21 @@ namespace stp
 				thread_sync_alert_.notify_all();
 			}
 		}
-		size_t waiting() const
-		{
-			return thread_waiting_;
-		}
 		size_t running() const
 		{
 			return thread_running_;
 		}
-		size_t sync_waiting() const
+		size_t waiting() const
 		{
-			return thread_sync_waiting_;
+			return thread_waiting_;
 		}
 		size_t sync_running() const
 		{
 			return thread_sync_running_;
+		}
+		size_t sync_waiting() const
+		{
+			return thread_sync_waiting_;
 		}
 		size_t size() const
 		{
@@ -490,9 +490,8 @@ namespace stp
 
 		typedef threadpool_state thread_state_t;
 
-		class task_t
+		struct task_t
 		{
-		public:
 			std::function<void()> * function_;
 			bool sync_function_;
 			bool dynamic_function_;
@@ -531,9 +530,8 @@ namespace stp
 			}
 		};
 
-		class thread_t
+		struct thread_t
 		{
-		public:
 			std::mutex task_mutex_;
 			task_t task_;
 
@@ -547,8 +545,9 @@ namespace stp
 
 		std::atomic<size_t> threadpool_size_;
 		std::list<thread_t> thread_array_;
-		std::priority_queue<task_t, std::deque<task_t>, bool(*)(task_t const &, task_t const &)> task_queue_{
-			[] (task_t const & task_1, task_t const & task_2)
+		std::priority_queue<task_t, std::deque<task_t>, bool(*)(task_t const &, task_t const &)> task_queue_
+		{
+			[](task_t const & task_1, task_t const & task_2)
 			{
 				return (task_1.priority_ != task_2.priority_ ?
 						task_1.priority_ < task_2.priority_ :
@@ -563,10 +562,10 @@ namespace stp
 		std::atomic<size_t> threadpool_ready_sync_tasks_;
 		std::atomic<size_t> threadpool_run_sync_tasks_;
 
-		std::atomic<size_t> thread_waiting_;
 		std::atomic<size_t> thread_running_;
-		std::atomic<size_t> thread_sync_waiting_;
+		std::atomic<size_t> thread_waiting_;
 		std::atomic<size_t> thread_sync_running_;
+		std::atomic<size_t> thread_sync_waiting_;
 
 		rw_mutex_t thread_mutex_;
 		rw_mutex_t thread_sync_mutex_;
