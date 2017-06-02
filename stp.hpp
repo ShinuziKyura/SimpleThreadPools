@@ -10,20 +10,20 @@ namespace stp
 {
 	enum class task_priority : uint32_t // Maybe expand this in the future
 	{
-		maximum = 6,
-		very_high = 5,
-		high = 4,
-		normal = 3,
-		low = 2,
-		very_low = 1,
-		minimum = 0
+		maximum = 6u,
+		very_high = 5u,
+		high = 4u,
+		normal = 3u,
+		low = 2u,
+		very_low = 1u,
+		minimum = 0u
 	};
 
 	enum class threadpool_state : uint32_t
 	{
-		running = 0,
-		waiting = 1,
-		terminating = 2
+		running = 0u,
+		waiting = 1u,
+		terminating = 2u
 	};
 
 	template <class ReturnType>
@@ -34,24 +34,22 @@ namespace stp
 		{
 			return task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 		}
+		void await()
+		{
+			if (!task_result_)
+			{
+				task_result_ = std::make_unique<ReturnType>(task_future_.get());
+			}
+		}
 		ReturnType result()
 		{
 			if (!task_result_)
 			{
 				if (task_future_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
 				{
-					throw std::runtime_error("Future not ready");
+					throw std::runtime_error("Task not ready");
 				}
 
-				task_result_ = std::make_unique<ReturnType>(task_future_.get());
-			}
-
-			return *task_result_;
-		}
-		ReturnType await()
-		{
-			if (!task_result_)
-			{
 				task_result_ = std::make_unique<ReturnType>(task_future_.get());
 			}
 
@@ -142,7 +140,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				for (size_t n = 0U; n < amount; ++n)
+				for (size_t n = 0u; n < amount; ++n)
 				{
 					thread_array_.emplace_back(&threadpool::threadpool__, this);
 				}
@@ -158,13 +156,13 @@ namespace stp
 				}
 
 				auto it = thread_array_.begin(), it_b = thread_array_.begin(), it_e = thread_array_.end();
-				for (size_t n = 0U; n < amount; ++it == it_e ? it = it_b : it)
+				for (size_t n = 0u; n < amount; ++it == it_e ? it = it_b : it)
 				{
 					if (it->thread_state_ != thread_state_t::terminating && !it->task_.function_)
 					{
-						std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+						std::unique_lock<rw_mutex_t> lock(thread_mutex_, std::try_to_lock);
 
-						if (!it->task_.function_)
+						if (lock.owns_lock() && !it->task_.function_)
 						{
 							it->thread_state_ = thread_state_t::terminating;
 							++n;
@@ -195,7 +193,22 @@ namespace stp
 		template <class FuncType, class ... ArgsType>
 		void new_task(FuncType && func, ArgsType && ... args)
 		{
-			new_task(std::forward<FuncType>(func), task_priority::normal, std::forward<ArgsType>(args) ...);
+			if (thread_state_ != thread_state_t::terminating)
+			{
+				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
+				auto task_function = new std::function<void()>([=] { task(); });
+
+				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+
+				task_queue_.emplace(task_function, false, true, 3u);
+				task_priority_ = task_queue_.top().priority_;
+
+				if (threadpool_notify_new_tasks_)
+				{
+					++threadpool_new_tasks_;
+					thread_alert_.notify_one();
+				}
+			}
 		}
 		template <class FuncType, class ... ArgsType>
 		void new_task(FuncType && func, task_priority const priority, ArgsType && ... args)
@@ -237,7 +250,22 @@ namespace stp
 		template <class FuncType, class ... ArgsType>
 		void new_sync_task(FuncType && func, ArgsType && ... args)
 		{
-			new_sync_task(std::forward<FuncType>(func), task_priority::normal, std::forward<ArgsType>(args) ...);
+			if (thread_state_ != thread_state_t::terminating)
+			{
+				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
+				auto task_function = new std::function<void()>([=] { task(); });
+
+				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+
+				task_queue_.emplace(task_function, true, true, 3u);
+				task_priority_ = task_queue_.top().priority_;
+
+				if (threadpool_notify_new_tasks_)
+				{
+					++threadpool_new_tasks_;
+					thread_alert_.notify_one();
+				}
+			}
 		}
 		template <class FuncType, class ... ArgsType>
 		void new_sync_task(FuncType && func, task_priority const priority, ArgsType && ... args)
@@ -278,18 +306,21 @@ namespace stp
 
 				for (auto & thread_ : thread_array_)
 				{
-					std::lock_guard<std::mutex> lock(thread_.task_mutex_);
+					std::unique_lock<std::mutex> lock(thread_.task_mutex_, std::try_to_lock);
 
-					if (thread_.task_.dynamic_function_)
+					if (lock.owns_lock())
 					{
-						delete thread_.task_.function_;
+						if (thread_.task_.dynamic_function_)
+						{
+							delete thread_.task_.function_;
+						}
+						thread_.task_.function_ = nullptr;
+						thread_.task_.priority_ = 0u;
 					}
-					thread_.task_.function_ = nullptr;
-					thread_.task_.priority_ = 0U;
 				}
 
-				threadpool_new_tasks_ = 0U;
-				task_priority_ = 0U;
+				threadpool_new_tasks_ = 0u;
+				task_priority_ = 0u;
 			}
 		}
 		void notify_new_tasks(bool const threadpool_notify_new_tasks)
@@ -391,19 +422,19 @@ namespace stp
 		}
 
 		threadpool(size_t const size = std::thread::hardware_concurrency(), threadpool_state const state = threadpool_state::running, bool const notify = true) :
-			threadpool_size_(0U),
+			threadpool_size_(0u),
 			thread_state_(state),
-			task_priority_(0U),
+			task_priority_(0u),
 			threadpool_notify_new_tasks_(notify),
-			threadpool_new_tasks_(0U),
-			threadpool_ready_sync_tasks_(0U),
-			threadpool_run_sync_tasks_(0U),
-			thread_waiting_(0U),
-			thread_running_(0U),
-			thread_sync_waiting_(0U),
-			thread_sync_running_(0U)
+			threadpool_new_tasks_(0u),
+			threadpool_ready_sync_tasks_(0u),
+			threadpool_run_sync_tasks_(0u),
+			thread_waiting_(0u),
+			thread_running_(0u),
+			thread_sync_waiting_(0u),
+			thread_sync_running_(0u)
 		{
-			for (size_t n = 0U; n < size; ++n)
+			for (size_t n = 0u; n < size; ++n)
 			{
 				thread_array_.emplace_back(&threadpool::threadpool__, this);
 			}
@@ -472,7 +503,7 @@ namespace stp
 			task_t(std::function<void()> * function = nullptr,
 				   bool const sync_function = false,
 				   bool const dynamic_function = false,
-				   task_priority_t const priority = 3U) :
+				   task_priority_t const priority = 3u) :
 				function_(function),
 				sync_function_(sync_function),
 				dynamic_function_(dynamic_function),
@@ -496,18 +527,7 @@ namespace stp
 					delete function_;
 				}
 				function_ = nullptr;
-				priority_ = 0U;
-			}
-		};
-
-		class task_comparator_t
-		{
-		public:
-			bool operator()(task_t const & task_0, task_t const & task_1)
-			{
-				return (task_0.priority_ != task_1.priority_ ?
-						task_0.priority_ < task_1.priority_ :
-						task_0.origin_ > task_1.origin_);
+				priority_ = 0u;
 			}
 		};
 
@@ -520,14 +540,21 @@ namespace stp
 			thread_state_t thread_state_;
 			std::thread thread_;
 
-			thread_t(void(threadpool::* func_ptr)(thread_t *), threadpool * obj_ptr) : thread_state_(obj_ptr->thread_state_), thread_(func_ptr, obj_ptr, this) // thread_ must be initialized last
+			thread_t(void(threadpool::* func_ptr)(thread_t *), threadpool * obj_ptr) : thread_state_(obj_ptr->thread_state_), thread_(func_ptr, obj_ptr, this)
 			{
 			}
 		};
 
 		std::atomic<size_t> threadpool_size_;
 		std::list<thread_t> thread_array_;
-		std::priority_queue<task_t, std::deque<task_t>, task_comparator_t> task_queue_;
+		std::priority_queue<task_t, std::deque<task_t>, bool(*)(task_t const &, task_t const &)> task_queue_{
+			[] (task_t const & task_1, task_t const & task_2)
+			{
+				return (task_1.priority_ != task_2.priority_ ?
+						task_1.priority_ < task_2.priority_ :
+						task_1.origin_ > task_2.origin_);
+			}
+		};
 		thread_state_t thread_state_;
 		task_priority_t task_priority_;
 
@@ -596,7 +623,7 @@ namespace stp
 
 									this_thread->task_ = task_queue_.top();
 									task_queue_.pop();
-									task_priority_ = (task_queue_.empty() ? 0U : task_queue_.top().priority_);
+									task_priority_ = (task_queue_.empty() ? 0u : task_queue_.top().priority_);
 
 									break;
 								}
@@ -615,7 +642,7 @@ namespace stp
 									task_queue_.push(this_thread->task_);
 									this_thread->task_ = task_queue_.top();
 									task_queue_.pop();
-									task_priority_ = (task_queue_.empty() ? 0U : task_queue_.top().priority_);
+									task_priority_ = (task_queue_.empty() ? 0u : task_queue_.top().priority_);
 								}
 							}
 						}

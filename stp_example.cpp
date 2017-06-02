@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <random>
 
-#define OUTPUT_TO_FILE_ 1
-#define TEST_ITERATIONS_ 1000
+#define OUTPUT_TO_FILE_ 0
+#define TEST_ITERATIONS_ 1
 
 std::random_device seed;
 std::mt19937 generate(seed());
