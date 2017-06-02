@@ -32,7 +32,7 @@ namespace stp
 	public:
 		bool ready() const
 		{
-			return task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+			return task_result_ || task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready; // Calling wait_for after task_result_ != nullptr would be UB
 		}
 		void await()
 		{
