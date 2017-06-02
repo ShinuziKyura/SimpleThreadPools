@@ -429,10 +429,10 @@ namespace stp
 			threadpool_new_tasks_(0u),
 			threadpool_ready_sync_tasks_(0u),
 			threadpool_run_sync_tasks_(0u),
-			thread_waiting_(0u),
 			thread_running_(0u),
-			thread_sync_waiting_(0u),
-			thread_sync_running_(0u)
+			thread_waiting_(0u),
+			thread_sync_running_(0u),
+			thread_sync_waiting_(0u)
 		{
 			for (size_t n = 0u; n < size; ++n)
 			{
