@@ -460,6 +460,8 @@ namespace stp
 			{
 				thread_alert_.notify_all();
 				thread_sync_alert_.notify_all();
+
+				std::this_thread::yield();
 			}
 
 			for (auto & thread_ : thread_array_)
