@@ -32,7 +32,7 @@ namespace stp
 	public:
 		bool ready() const
 		{
-			return task_result_ || task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready; // Calling wait_for after task_result_ != nullptr would be UB
+			return task_result_ || task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 		}
 		void await()
 		{
@@ -59,7 +59,7 @@ namespace stp
 		task<ReturnType>() = delete;
 		template <class FuncType, class ... ArgsType>
 		task<ReturnType>(FuncType && func, ArgsType && ... args) :
-			task_package_(std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...)), // Eventually I'll have to do this properly
+			task_package_(std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...)), 
 			task_function_([this] { task_package_(); }),
 			task_future_(task_package_.get_future()),
 			task_result_(nullptr)
@@ -421,7 +421,9 @@ namespace stp
 			return threadpool_notify_new_tasks_;
 		}
 
-		threadpool(size_t const size = std::thread::hardware_concurrency(), threadpool_state const state = threadpool_state::running, bool const notify = true) :
+		threadpool(size_t const size = std::thread::hardware_concurrency(), 
+				   threadpool_state const state = threadpool_state::running, 
+				   bool const notify = true) :
 			threadpool_size_(0u),
 			thread_state_(state),
 			task_priority_(0u),
@@ -467,7 +469,7 @@ namespace stp
 		}
 	private:
 #if defined(__clang__) && __clang_major__ >= 3
-#if __clang_minor__ >= 7 && _HAS_SHARED_MUTEX == 1
+#if ((__clang_major__ == 3 && __clang_minor__ >= 7) || __clang_major__ > 3) && _HAS_SHARED_MUTEX == 1
 		typedef std::shared_mutex rw_mutex_t;
 #elif __clang_minor__ >= 4
 		typedef std::shared_timed_mutex rw_mutex_t;
@@ -485,11 +487,8 @@ namespace stp
 		typedef std::shared_timed_mutex rw_mutex_t;
 #endif
 #endif
-
 		typedef uint32_t task_priority_t;
-
 		typedef threadpool_state thread_state_t;
-
 		struct task_t
 		{
 			std::function<void()> * function_;
@@ -529,7 +528,6 @@ namespace stp
 				priority_ = 0u;
 			}
 		};
-
 		struct thread_t
 		{
 			std::mutex task_mutex_;
@@ -538,7 +536,9 @@ namespace stp
 			thread_state_t thread_state_;
 			std::thread thread_;
 
-			thread_t(void(threadpool::* func_ptr)(thread_t *), threadpool * obj_ptr) : thread_state_(obj_ptr->thread_state_), thread_(func_ptr, obj_ptr, this)
+			thread_t(void(threadpool::* func_ptr)(thread_t *), threadpool * obj_ptr) : 
+				thread_state_(obj_ptr->thread_state_), 
+				thread_(func_ptr, obj_ptr, this)
 			{
 			}
 		};
