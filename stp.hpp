@@ -572,6 +572,78 @@ namespace stp
 		std::condition_variable_any thread_alert_;
 		std::condition_variable_any thread_sync_alert_;
 
+		void threadpool_run_task__(thread_t * const this_thread)
+		{
+			std::lock_guard<std::mutex> lock(this_thread->task_mutex_);
+
+			if (this_thread->task_.function_)
+			{
+				++(this_thread->task_.sync_function_ ? thread_sync_running_ : thread_running_);
+
+				this_thread->task_();
+
+				--(this_thread->task_.sync_function_ ? thread_sync_running_ : thread_running_);
+			}
+		}
+		void threadpool_sync_task__(thread_t * const this_thread, std::shared_lock<rw_mutex_t> & sync_lock)
+		{
+			++threadpool_ready_sync_tasks_;
+
+			while (this_thread->thread_state_ != thread_state_t::terminating)
+			{
+				sync_lock.lock();
+
+				// ===== Wait for signal =====
+				while (thread_state_ != thread_state_t::terminating
+					   && this_thread->thread_state_ != thread_state_t::terminating
+					   && !threadpool_run_sync_tasks_)
+				{
+					++thread_sync_waiting_;
+
+					thread_sync_alert_.wait(sync_lock);
+
+					--thread_sync_waiting_;
+				}
+
+				if (this_thread->thread_state_ != thread_state_t::terminating)
+				{
+					this_thread->thread_state_ = thread_state_;
+				}
+
+				sync_lock.unlock();
+
+				// ===== Check signal =====
+				switch (this_thread->thread_state_)
+				{
+					case thread_state_t::running:
+						if (threadpool_run_sync_tasks_ > 0)
+						{
+							--threadpool_run_sync_tasks_;
+							break;
+						}
+					case thread_state_t::waiting:
+						continue;
+					case thread_state_t::terminating:
+						return;
+				}
+
+				// ===== Run task =====
+				switch (this_thread->thread_state_)
+				{
+					case thread_state_t::running:
+						if (this_thread->task_.function_)
+						{
+							threadpool_run_task__(this_thread);
+						}
+						return;
+					case thread_state_t::waiting:
+						++threadpool_ready_sync_tasks_;
+						continue;
+					case thread_state_t::terminating:
+						return;
+				}
+			}
+		}
 		void threadpool__(thread_t * const this_thread)
 		{
 			std::shared_lock<rw_mutex_t> lock(thread_mutex_, std::defer_lock);
@@ -670,78 +742,6 @@ namespace stp
 			}
 
 			--threadpool_size_;
-		}
-		void threadpool_sync_task__(thread_t * const this_thread, std::shared_lock<rw_mutex_t> & sync_lock)
-		{
-			++threadpool_ready_sync_tasks_;
-
-			while (this_thread->thread_state_ != thread_state_t::terminating)
-			{
-				sync_lock.lock();
-
-				// ===== Wait for signal =====
-				while (thread_state_ != thread_state_t::terminating
-					   && this_thread->thread_state_ != thread_state_t::terminating
-					   && !threadpool_run_sync_tasks_)
-				{
-					++thread_sync_waiting_;
-
-					thread_sync_alert_.wait(sync_lock);
-
-					--thread_sync_waiting_;
-				}
-
-				if (this_thread->thread_state_ != thread_state_t::terminating)
-				{
-					this_thread->thread_state_ = thread_state_;
-				}
-
-				sync_lock.unlock();
-
-				// ===== Check signal =====
-				switch (this_thread->thread_state_)
-				{
-					case thread_state_t::running:
-						if (threadpool_run_sync_tasks_ > 0)
-						{
-							--threadpool_run_sync_tasks_;
-							break;
-						}
-					case thread_state_t::waiting:
-						continue;
-					case thread_state_t::terminating:
-						return;
-				}
-
-				// ===== Run task =====
-				switch (this_thread->thread_state_)
-				{
-					case thread_state_t::running:
-						if (this_thread->task_.function_)
-						{
-							threadpool_run_task__(this_thread);
-						}
-						return;
-					case thread_state_t::waiting:
-						++threadpool_ready_sync_tasks_;
-						continue;
-					case thread_state_t::terminating:
-						return;
-				}
-			}
-		}
-		void threadpool_run_task__(thread_t * const this_thread)
-		{
-			std::lock_guard<std::mutex> lock(this_thread->task_mutex_);
-
-			if (this_thread->task_.function_)
-			{
-				++(this_thread->task_.sync_function_ ? thread_sync_running_ : thread_running_);
-
-				this_thread->task_();
-
-				--(this_thread->task_.sync_function_ ? thread_sync_running_ : thread_running_);
-			}
 		}
 	};
 }
