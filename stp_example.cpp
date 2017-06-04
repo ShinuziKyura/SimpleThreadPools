@@ -126,7 +126,8 @@ int main()
 
 		stp::threadpool threadpool(1, stp::threadpool_state::waiting);	// Default: std::thread::hardware_concurrency()
 																		// Default: stp::threadpool_state::running
-		stp::task<double> task_00(sorter, (vec_00));					// Default: true
+																		// Default: true
+		stp::task<double> task_00(sorter, (vec_00));
 		stp::task<double> task_01(sorter, (vec_01));
 		stp::task<double> task_02(sorter, (vec_02));
 		stp::task<double> task_03(sorter, (vec_03));

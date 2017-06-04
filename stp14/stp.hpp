@@ -1,14 +1,15 @@
-#ifndef SIMPLE_THREAD_POOLS_H_
-#define SIMPLE_THREAD_POOLS_H_
+#ifndef SIMPLE_THREAD_POOLS_HPP_
+#define SIMPLE_THREAD_POOLS_HPP_
 
 #include <future>
 #include <shared_mutex>
+#include <functional>
 #include <list>
 #include <queue>
 
 namespace stp
 {
-	enum class task_priority : uint32_t // Maybe expand this in the future
+	enum class task_priority : uint32_t
 	{
 		maximum = 6u,
 		very_high = 5u,
@@ -152,7 +153,7 @@ namespace stp
 			{
 				if (threadpool_size_ < amount)
 				{
-					std::invalid_argument("Threadpool bad argument");
+					throw std::invalid_argument("Threadpool bad argument");
 				}
 
 				auto it = thread_array_.begin(), it_b = thread_array_.begin(), it_e = thread_array_.end();
@@ -160,7 +161,7 @@ namespace stp
 				{
 					if (it->thread_state_ != thread_state_t::terminating && !it->task_.function_)
 					{
-						std::unique_lock<rw_mutex_t> lock(thread_mutex_, std::try_to_lock);
+						std::unique_lock<std::shared_timed_mutex> lock(thread_mutex_, std::try_to_lock);
 
 						if (lock.owns_lock() && !it->task_.function_)
 						{
@@ -178,7 +179,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
 
 				task_queue_.emplace(&task.task_function_, false, false, static_cast<task_priority_t>(priority));
 				task_priority_ = task_queue_.top().priority_;
@@ -198,7 +199,7 @@ namespace stp
 				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
 
 				task_queue_.emplace(task_function, false, true, 3u);
 				task_priority_ = task_queue_.top().priority_;
@@ -218,7 +219,7 @@ namespace stp
 				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
 
 				task_queue_.emplace(task_function, false, true, static_cast<task_priority_t>(priority));
 				task_priority_ = task_queue_.top().priority_;
@@ -235,7 +236,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
 
 				task_queue_.emplace(&task.task_function_, true, false, static_cast<task_priority_t>(priority));
 				task_priority_ = task_queue_.top().priority_;
@@ -255,7 +256,7 @@ namespace stp
 				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
 
 				task_queue_.emplace(task_function, true, true, 3u);
 				task_priority_ = task_queue_.top().priority_;
@@ -275,7 +276,7 @@ namespace stp
 				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
 
 				task_queue_.emplace(task_function, true, true, static_cast<task_priority_t>(priority));
 				task_priority_ = task_queue_.top().priority_;
@@ -292,8 +293,8 @@ namespace stp
 			if (thread_state_ != thread_state_t::terminating)
 			{
 				std::lock(thread_mutex_, thread_sync_mutex_);
-				std::lock_guard<rw_mutex_t> lock0(thread_mutex_, std::adopt_lock);
-				std::lock_guard<rw_mutex_t> lock1(thread_sync_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock0(thread_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock1(thread_sync_mutex_, std::adopt_lock);
 
 				while (!task_queue_.empty())
 				{
@@ -334,7 +335,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
 
 				threadpool_new_tasks_ = task_queue_.size();
 				thread_alert_.notify_all();
@@ -349,7 +350,7 @@ namespace stp
 					throw std::runtime_error("Threadpool synchronizing");
 				}
 
-				std::lock_guard<rw_mutex_t> lock(thread_sync_mutex_);
+				std::lock_guard<std::shared_timed_mutex> lock(thread_sync_mutex_);
 
 				threadpool_run_sync_tasks_ += threadpool_ready_sync_tasks_;
 				threadpool_ready_sync_tasks_ -= threadpool_run_sync_tasks_;
@@ -361,8 +362,8 @@ namespace stp
 			if (thread_state_ == thread_state_t::waiting)
 			{
 				std::lock(thread_mutex_, thread_sync_mutex_);
-				std::lock_guard<rw_mutex_t> lock0(thread_mutex_, std::adopt_lock);
-				std::lock_guard<rw_mutex_t> lock1(thread_sync_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock0(thread_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock1(thread_sync_mutex_, std::adopt_lock);
 
 				thread_state_ = thread_state_t::running;
 				thread_alert_.notify_all();
@@ -373,8 +374,8 @@ namespace stp
 			if (thread_state_ == thread_state_t::running)
 			{
 				std::lock(thread_mutex_, thread_sync_mutex_);
-				std::lock_guard<rw_mutex_t> lock0(thread_mutex_, std::adopt_lock);
-				std::lock_guard<rw_mutex_t> lock1(thread_sync_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock0(thread_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock1(thread_sync_mutex_, std::adopt_lock);
 
 				thread_state_ = thread_state_t::waiting;
 			}
@@ -384,8 +385,8 @@ namespace stp
 			if (thread_state_ != thread_state_t::terminating)
 			{
 				std::lock(thread_mutex_, thread_sync_mutex_);
-				std::lock_guard<rw_mutex_t> lock0(thread_mutex_, std::adopt_lock);
-				std::lock_guard<rw_mutex_t> lock1(thread_sync_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock0(thread_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock1(thread_sync_mutex_, std::adopt_lock);
 
 				thread_state_ = thread_state_t::terminating;
 				thread_alert_.notify_all();
@@ -450,8 +451,8 @@ namespace stp
 			if (thread_state_ != thread_state_t::terminating)
 			{
 				std::lock(thread_mutex_, thread_sync_mutex_);
-				std::lock_guard<rw_mutex_t> lock0(thread_mutex_, std::adopt_lock);
-				std::lock_guard<rw_mutex_t> lock1(thread_sync_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock0(thread_mutex_, std::adopt_lock);
+				std::lock_guard<std::shared_timed_mutex> lock1(thread_sync_mutex_, std::adopt_lock);
 
 				thread_state_ = thread_state_t::terminating;
 			}
@@ -470,27 +471,9 @@ namespace stp
 			}
 		}
 	private:
-#if defined(__clang__) && __clang_major__ >= 3
-#if ((__clang_major__ == 3 && __clang_minor__ >= 7) || __clang_major__ > 3) && _HAS_SHARED_MUTEX == 1
-		typedef std::shared_mutex rw_mutex_t;
-#elif __clang_minor__ >= 4
-		typedef std::shared_timed_mutex rw_mutex_t;
-#endif
-#elif defined(__GNUG__)
-#if __cplusplus >= 201402L && _HAS_SHARED_MUTEX == 1
-		typedef std::shared_mutex rw_mutex_t;
-#elif __cplusplus == 201402L
-		typedef std::shared_timed_mutex rw_mutex_t;
-#endif
-#elif defined(_MSC_VER)
-#if _MSVC_LANG >= 201402L && _HAS_SHARED_MUTEX == 1
-		typedef std::shared_mutex rw_mutex_t;
-#elif _MSVC_LANG == 201402L
-		typedef std::shared_timed_mutex rw_mutex_t;
-#endif
-#endif
 		typedef uint32_t task_priority_t;
 		typedef threadpool_state thread_state_t;
+
 		struct task_t
 		{
 			std::function<void()> * function_;
@@ -530,6 +513,7 @@ namespace stp
 				priority_ = 0u;
 			}
 		};
+
 		struct thread_t
 		{
 			std::mutex task_mutex_;
@@ -569,8 +553,8 @@ namespace stp
 		std::atomic<size_t> thread_sync_running_;
 		std::atomic<size_t> thread_sync_waiting_;
 
-		rw_mutex_t thread_mutex_;
-		rw_mutex_t thread_sync_mutex_;
+		std::shared_timed_mutex thread_mutex_;
+		std::shared_timed_mutex thread_sync_mutex_;
 		std::condition_variable_any thread_alert_;
 		std::condition_variable_any thread_sync_alert_;
 
@@ -587,7 +571,7 @@ namespace stp
 				--(this_thread->task_.sync_function_ ? thread_sync_running_ : thread_running_);
 			}
 		}
-		void threadpool_sync_task__(thread_t * const this_thread, std::shared_lock<rw_mutex_t> & sync_lock)
+		void threadpool_sync_task__(thread_t * const this_thread, std::shared_lock<std::shared_timed_mutex> & sync_lock)
 		{
 			++threadpool_ready_sync_tasks_;
 
@@ -595,7 +579,6 @@ namespace stp
 			{
 				sync_lock.lock();
 
-				// ===== Wait for signal =====
 				while (thread_state_ != thread_state_t::terminating
 					   && this_thread->thread_state_ != thread_state_t::terminating
 					   && !threadpool_run_sync_tasks_)
@@ -614,7 +597,6 @@ namespace stp
 
 				sync_lock.unlock();
 
-				// ===== Check signal =====
 				switch (this_thread->thread_state_)
 				{
 					case thread_state_t::running:
@@ -629,7 +611,6 @@ namespace stp
 						return;
 				}
 
-				// ===== Run task =====
 				switch (this_thread->thread_state_)
 				{
 					case thread_state_t::running:
@@ -648,8 +629,8 @@ namespace stp
 		}
 		void threadpool__(thread_t * const this_thread)
 		{
-			std::shared_lock<rw_mutex_t> lock(thread_mutex_, std::defer_lock);
-			std::shared_lock<rw_mutex_t> sync_lock(thread_sync_mutex_, std::defer_lock);
+			std::shared_lock<std::shared_timed_mutex> lock(thread_mutex_, std::defer_lock);
+			std::shared_lock<std::shared_timed_mutex> sync_lock(thread_sync_mutex_, std::defer_lock);
 
 			++threadpool_size_;
 
@@ -657,7 +638,6 @@ namespace stp
 			{
 				lock.lock();
 
-				// ===== Wait for task =====
 				while (thread_state_ != thread_state_t::terminating
 					   && this_thread->thread_state_ != thread_state_t::terminating
 					   && ((!threadpool_new_tasks_ && !this_thread->task_.function_)
@@ -679,7 +659,6 @@ namespace stp
 
 				lock.unlock();
 
-				// ===== Get task =====
 				switch (this_thread->thread_state_)
 				{
 					case thread_state_t::running:
@@ -688,7 +667,7 @@ namespace stp
 						{
 							if (threadpool_new_tasks_ > 0)
 							{
-								std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+								std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
 
 								if (threadpool_new_tasks_ > 0)
 								{
@@ -707,7 +686,7 @@ namespace stp
 						{
 							if (threadpool_new_tasks_ > 0)
 							{
-								std::lock_guard<rw_mutex_t> lock(thread_mutex_);
+								std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
 
 								if (threadpool_new_tasks_ > 0
 									&& task_priority_ > this_thread->task_.priority_)
@@ -724,7 +703,6 @@ namespace stp
 						continue;
 				}
 
-				// ===== Run task =====
 				switch (this_thread->thread_state_)
 				{
 					case thread_state_t::running:
@@ -748,4 +726,4 @@ namespace stp
 	};
 }
 
-#endif//SIMPLE_THREAD_POOLS_H_
+#endif
