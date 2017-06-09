@@ -27,7 +27,29 @@ namespace stp
 		terminating = 2u
 	};
 
-	template <class ReturnType>
+	class stpi___ // Implementation class
+	{
+		template <class ParamType, typename = std::enable_if<std::is_lvalue_reference<ParamType>::value>::type>
+		static constexpr auto value_wrapper__(ParamType && arg) -> decltype(std::ref(arg))
+		{
+			return std::ref(arg);
+		}
+		template <class ParamType, typename = std::enable_if<std::is_rvalue_reference<ParamType>::value>::type>
+		static constexpr auto value_wrapper__(ParamType && arg) -> decltype(arg)
+		{
+			return arg;
+		}
+		template <class ParamType, typename = std::enable_if<!std::is_reference<ParamType>::value>::type>
+		static constexpr auto value_wrapper__(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
+		{
+			return std::bind(std::move<ParamType &>, arg);
+		}
+
+		template <class RetType> friend class task;
+		friend class threadpool;
+	};
+
+	template <class RetType>
 	class task
 	{
 	public:
@@ -39,10 +61,10 @@ namespace stp
 		{
 			if (!task_result_)
 			{
-				task_result_ = std::make_unique<ReturnType>(task_future_.get());
+				task_result_ = std::make_unique<RetType>(task_future_.get());
 			}
 		}
-		ReturnType result()
+		RetType result()
 		{
 			if (!task_result_)
 			{
@@ -51,43 +73,51 @@ namespace stp
 					throw std::runtime_error("Task not ready");
 				}
 
-				task_result_ = std::make_unique<ReturnType>(task_future_.get());
+				task_result_ = std::make_unique<RetType>(task_future_.get());
 			}
 
 			return *task_result_;
 		}
 
-		task<ReturnType>() = delete;
-		template <class FuncType, class ... ArgsType>
-		task<ReturnType>(FuncType && func, ArgsType && ... args) :
-			task_package_(std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...)), 
+		task<RetType>() = delete;
+		template <class ... RetParamType, class ... ParamType>
+		task<RetType>(RetType(* func)(RetParamType ...), ParamType && ... args) :
+			task_package_(std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...)),
 			task_function_([this] { task_package_(); }),
 			task_future_(task_package_.get_future()),
 			task_result_(nullptr)
 		{
 		}
-		task<ReturnType>(task<ReturnType> const &) = delete;
-		task<ReturnType> & operator=(task<ReturnType> const &) = delete;
-		task<ReturnType>(task<ReturnType> &&) = default;
-		task<ReturnType> & operator=(task<ReturnType> &&) = default;
-		~task<ReturnType>() = default;
+		template <class ObjType, class ... RetParamType, class ... ParamType>
+		task<RetType>(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args) :
+			task_package_(std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...)),
+			task_function_([this] { task_package_(); }),
+			task_future_(task_package_.get_future()),
+			task_result_(nullptr)
+		{
+		}
+		task<RetType>(task<RetType> const &) = delete;
+		task<RetType> & operator=(task<RetType> const &) = delete;
+		task<RetType>(task<RetType> &&) = default;
+		task<RetType> & operator=(task<RetType> &&) = default;
+		~task<RetType>() = default;
 
-		ReturnType operator()()
+		RetType operator()()
 		{
 			if (!task_result_)
 			{
 				task_function_();
 
-				task_result_ = std::make_unique<ReturnType>(task_future_.get());
+				task_result_ = std::make_unique<RetType>(task_future_.get());
 			}
 
 			return *task_result_;
 		}
 	private:
-		std::packaged_task<ReturnType()> task_package_;
+		std::packaged_task<RetType()> task_package_;
 		std::function<void()> task_function_;
-		std::future<ReturnType> task_future_;
-		std::unique_ptr<ReturnType> task_result_;
+		std::future<RetType> task_future_;
+		std::unique_ptr<RetType> task_result_;
 
 		friend class threadpool;
 	};
@@ -106,9 +136,16 @@ namespace stp
 		}
 
 		task() = delete;
-		template <class FuncType, class ... ArgsType>
-		task<void>(FuncType && func, ArgsType && ... args) :
-			task_package_(std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...)),
+		template <class RetType, class ... RetParamType, class ... ParamType>
+		task(RetType(* func)(RetParamType ...), ParamType && ... args) :
+			task_package_(std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...)),
+			task_function_([this] { task_package_(); }),
+			task_future_(task_package_.get_future())
+		{
+		}
+		template <class RetType, class ObjType, class ... RetParamType, class ... ParamType>
+		task(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args) :
+			task_package_(std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...)),
 			task_function_([this] { task_package_(); }),
 			task_future_(task_package_.get_future())
 		{
@@ -174,120 +211,128 @@ namespace stp
 				thread_alert_.notify_all();
 			}
 		}
-		template <class ReturnType>
-		void new_task(task<ReturnType> & task, task_priority const priority = task_priority::normal)
+		template <class RetType>
+		void new_task(task<RetType> & task, task_priority const priority = task_priority::normal)
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
-
-				task_queue_.emplace(&task.task_function_, false, false, static_cast<task_priority_t>(priority));
-				task_priority_ = task_queue_.top().priority_;
-
-				if (threadpool_notify_new_tasks_)
-				{
-					++threadpool_new_tasks_;
-					thread_alert_.notify_one();
-				}
+				new_task__(&task.task_function_, false, false, priority);
 			}
 		}
-		template <class FuncType, class ... ArgsType>
-		void new_task(FuncType && func, ArgsType && ... args)
+		template <class RetType, class ... RetParamType, class ... ParamType>
+		void new_task(RetType(* func)(RetParamType ...), ParamType && ... args)
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
+				auto task = std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
-
-				task_queue_.emplace(task_function, false, true, 3u);
-				task_priority_ = task_queue_.top().priority_;
-
-				if (threadpool_notify_new_tasks_)
-				{
-					++threadpool_new_tasks_;
-					thread_alert_.notify_one();
-				}
+				new_task__(task_function, false, true, task_priority::normal);
 			}
 		}
-		template <class FuncType, class ... ArgsType>
-		void new_task(FuncType && func, task_priority const priority, ArgsType && ... args)
+		template <class RetType, class ObjType, class ... RetParamType, class ... ParamType>
+		void new_task(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args)
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
+				auto task = std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
-
-				task_queue_.emplace(task_function, false, true, static_cast<task_priority_t>(priority));
-				task_priority_ = task_queue_.top().priority_;
-
-				if (threadpool_notify_new_tasks_)
-				{
-					++threadpool_new_tasks_;
-					thread_alert_.notify_one();
-				}
+				new_task__(task_function, false, true, task_priority::normal);
 			}
 		}
-		template <class ReturnType>
-		void new_sync_task(task<ReturnType> & task, task_priority const priority = task_priority::normal)
+		template <class RetType, class ... RetParamType, class ... ParamType>
+		void new_task(RetType(* func)(RetParamType ...), task_priority const priority, ParamType && ... args)
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
-
-				task_queue_.emplace(&task.task_function_, true, false, static_cast<task_priority_t>(priority));
-				task_priority_ = task_queue_.top().priority_;
-
-				if (threadpool_notify_new_tasks_)
-				{
-					++threadpool_new_tasks_;
-					thread_alert_.notify_one();
-				}
-			}
-		}
-		template <class FuncType, class ... ArgsType>
-		void new_sync_task(FuncType && func, ArgsType && ... args)
-		{
-			if (thread_state_ != thread_state_t::terminating)
-			{
-				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
+				auto task = std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
-
-				task_queue_.emplace(task_function, true, true, 3u);
-				task_priority_ = task_queue_.top().priority_;
-
-				if (threadpool_notify_new_tasks_)
-				{
-					++threadpool_new_tasks_;
-					thread_alert_.notify_one();
-				}
+				new_task__(task_function, false, true, priority);
 			}
 		}
-		template <class FuncType, class ... ArgsType>
-		void new_sync_task(FuncType && func, task_priority const priority, ArgsType && ... args)
+		template <class RetType, class ObjType, class ... RetParamType, class ... ParamType>
+		void new_task(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, task_priority const priority,
+					  ParamType && ... args)
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(std::forward<FuncType>(func), std::forward<ArgsType>(args) ...);
+				auto task = std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
-
-				task_queue_.emplace(task_function, true, true, static_cast<task_priority_t>(priority));
-				task_priority_ = task_queue_.top().priority_;
-
-				if (threadpool_notify_new_tasks_)
-				{
-					++threadpool_new_tasks_;
-					thread_alert_.notify_one();
-				}
+				new_task__(task_function, false, true, priority);
 			}
 		}
+		template <class RetType>
+		void new_sync_task(task<RetType> & task, task_priority const priority = task_priority::normal)
+		{
+			if (thread_state_ != thread_state_t::terminating)
+			{
+				new_task__(&task.task_function_, true, false, priority);
+			}
+		}
+		template <class RetType, class ... RetParamType, class ... ParamType>
+		void new_sync_task(RetType(* func)(RetParamType ...), ParamType && ... args)
+		{
+			if (thread_state_ != thread_state_t::terminating)
+			{
+				auto task = std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task_function = new std::function<void()>([=] { task(); });
+
+				new_task__(task_function, true, true, task_priority::normal);
+			}
+		}
+		template <class RetType, class ObjType, class ... RetParamType, class ... ParamType>
+		void new_sync_task(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args)
+		{
+			if (thread_state_ != thread_state_t::terminating)
+			{
+				auto task = std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task_function = new std::function<void()>([=] { task(); });
+
+				new_task__(task_function, true, true, task_priority::normal);
+			}
+		}
+		template <class RetType, class ... RetParamType, class ... ParamType>
+		void new_sync_task(RetType(* func)(RetParamType ...), task_priority const priority, ParamType && ... args)
+		{
+			if (thread_state_ != thread_state_t::terminating)
+			{
+				auto task = std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task_function = new std::function<void()>([=] { task(); });
+
+				new_task__(task_function, true, true, priority);
+			}
+		}
+		template <class RetType, class ObjType, class ... RetParamType, class ... ParamType>
+		void new_sync_task(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, task_priority const priority,
+						   ParamType && ... args)
+		{
+			if (thread_state_ != thread_state_t::terminating)
+			{
+				auto task = std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task_function = new std::function<void()>([=] { task(); });
+
+				new_task__(task_function, true, true, priority);
+			}
+		}
+	private:
+		void new_task__(std::function<void()> * function, bool const sync_function, bool const dynamic_function,
+						task_priority const priority)
+		{
+			std::lock_guard<std::shared_timed_mutex> lock(thread_mutex_);
+
+			task_queue_.emplace(function, sync_function, dynamic_function, static_cast<task_priority_t>(priority));
+			task_priority_ = task_queue_.top().priority_;
+
+			if (threadpool_notify_new_tasks_)
+			{
+				++threadpool_new_tasks_;
+				thread_alert_.notify_one();
+			}
+		}
+	public:
 		void delete_tasks()
 		{
 			if (thread_state_ != thread_state_t::terminating)
@@ -422,8 +467,8 @@ namespace stp
 			return threadpool_notify_new_tasks_;
 		}
 
-		threadpool(size_t const size = std::thread::hardware_concurrency(), 
-				   threadpool_state const state = threadpool_state::running, 
+		threadpool(size_t const size = std::thread::hardware_concurrency(),
+				   threadpool_state const state = threadpool_state::running,
 				   bool const notify = true) :
 			threadpool_size_(0u),
 			thread_state_(state),
@@ -522,9 +567,9 @@ namespace stp
 			thread_state_t thread_state_;
 			std::thread thread_;
 
-			thread_t(void(threadpool::* func_ptr)(thread_t *), threadpool * obj_ptr) : 
-				thread_state_(obj_ptr->thread_state_), 
-				thread_(func_ptr, obj_ptr, this)
+			thread_t(void(threadpool::* func)(thread_t *), threadpool * obj) :
+				thread_state_(obj->thread_state_),
+				thread_(func, obj, this)
 			{
 			}
 		};
