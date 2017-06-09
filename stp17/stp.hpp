@@ -23,24 +23,24 @@ namespace stp
 	enum class threadpool_state : uint32_t
 	{
 		running = 0u,
-		waiting = 1u,
+		stopping = 1u,
 		terminating = 2u
 	};
 
 	class stpi___ // Implementation class
 	{
 		template <class ParamType, typename = std::enable_if<std::is_lvalue_reference<ParamType>::value>::type>
-		static constexpr auto value_wrapper__(ParamType && arg) -> decltype(std::ref(arg))
+		static constexpr auto value_wrapper(ParamType && arg) -> decltype(std::ref(arg))
 		{
 			return std::ref(arg);
 		}
 		template <class ParamType, typename = std::enable_if<std::is_rvalue_reference<ParamType>::value>::type>
-		static constexpr auto value_wrapper__(ParamType && arg) -> decltype(arg)
+		static constexpr auto value_wrapper(ParamType && arg) -> decltype(arg)
 		{
 			return arg;
 		}
 		template <class ParamType, typename = std::enable_if<!std::is_reference<ParamType>::value>::type>
-		static constexpr auto value_wrapper__(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
+		static constexpr auto value_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
 		{
 			return std::bind(std::move<ParamType &>, arg);
 		}
@@ -53,16 +53,53 @@ namespace stp
 	class task
 	{
 	public:
-		bool ready() const
-		{
-			return task_result_ || task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
-		}
-		void await()
+		bool ready()
 		{
 			if (!task_result_)
 			{
+				if (task_future_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+				{
+					return false;
+				}
 				task_result_ = std::make_unique<RetType>(task_future_.get());
 			}
+			return true;
+		}
+		void wait()
+		{
+			if (!task_result_)
+			{
+				task_future_.wait();
+				task_result_ = std::make_unique<RetType>(task_future_.get());
+			}
+		}
+		template <class Rep, class Period>
+		std::future_status wait_for(std::chrono::duration<Rep, Period> const & timeout_duration)
+		{
+			if (!task_result_)
+			{
+				auto retval = task_future_.wait_for(timeout_duration);
+				if (retval == std::future_status::ready)
+				{
+					task_result_ = std::make_unique<RetType>(task_future_.get());
+				}
+				return retval;
+			}
+			return std::future_status::ready;
+		}
+		template <class Clock, class Duration>
+		std::future_status wait_until(std::chrono::time_point<Clock, Duration> const & timeout_time)
+		{
+			if (!task_result_)
+			{
+				auto retval = task_future_.wait_until(timeout_time);
+				if (retval == std::future_status::ready)
+				{
+					task_result_ = std::make_unique<RetType>(task_future_.get());
+				}
+				return retval;
+			}
+			return std::future_status::ready;
 		}
 		RetType result()
 		{
@@ -72,28 +109,30 @@ namespace stp
 				{
 					throw std::runtime_error("Task not ready");
 				}
-
 				task_result_ = std::make_unique<RetType>(task_future_.get());
 			}
-
 			return *task_result_;
 		}
 
 		task<RetType>() = delete;
+		task<RetType>(std::function<RetType()> & func) :
+			task_package_(func),
+			task_function_([this] { task_package_(); }),
+			task_future_(task_package_.get_future())
+		{
+		}
 		template <class ... RetParamType, class ... ParamType>
 		task<RetType>(RetType(* func)(RetParamType ...), ParamType && ... args) :
-			task_package_(std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...)),
+			task_package_(std::bind(func, stpi___::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_function_([this] { task_package_(); }),
-			task_future_(task_package_.get_future()),
-			task_result_(nullptr)
+			task_future_(task_package_.get_future())
 		{
 		}
 		template <class ObjType, class ... RetParamType, class ... ParamType>
 		task<RetType>(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args) :
-			task_package_(std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...)),
+			task_package_(std::bind(func, obj, stpi___::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_function_([this] { task_package_(); }),
-			task_future_(task_package_.get_future()),
-			task_result_(nullptr)
+			task_future_(task_package_.get_future())
 		{
 		}
 		task<RetType>(task<RetType> const &) = delete;
@@ -107,17 +146,15 @@ namespace stp
 			if (!task_result_)
 			{
 				task_function_();
-
 				task_result_ = std::make_unique<RetType>(task_future_.get());
 			}
-
 			return *task_result_;
 		}
 	private:
 		std::packaged_task<RetType()> task_package_;
 		std::function<void()> task_function_;
 		std::future<RetType> task_future_;
-		std::unique_ptr<RetType> task_result_;
+		std::unique_ptr<RetType> task_result_ = nullptr;
 
 		friend class threadpool;
 	};
@@ -126,26 +163,73 @@ namespace stp
 	class task<void>
 	{
 	public:
-		bool ready() const
+		bool ready()
 		{
-			return task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+			if (!task_result_)
+			{
+				if (task_future_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+				{
+					return false;
+				}
+				task_result_ = true;
+			}
+			return true;
 		}
-		void await()
+		void wait()
 		{
-			task_future_.wait();
+			if (!task_result_)
+			{
+				task_future_.wait();
+				task_result_ = true;
+			}
+		}
+		template <class Rep, class Period>
+		std::future_status wait_for(std::chrono::duration<Rep, Period> const & timeout_duration)
+		{
+			if (!task_result_)
+			{
+				auto retval = task_future_.wait_for(timeout_duration);
+				if (retval == std::future_status::ready)
+				{
+					task_result_ = true;
+				}
+				return retval;
+			}
+			return std::future_status::ready;
+		}
+		template <class Clock, class Duration>
+		std::future_status wait_until(std::chrono::time_point<Clock, Duration> const & timeout_time)
+		{
+			if (!task_result_)
+			{
+				auto retval = task_future_.wait_until(timeout_time);
+				if (retval == std::future_status::ready)
+				{
+					task_result_ = true;
+				}
+				return retval;
+			}
+			return std::future_status::ready;
 		}
 
 		task() = delete;
+		template <class RetType>
+		task(std::function<RetType()> & func) :
+			task_package_(func),
+			task_function_([this] { task_package_(); }),
+			task_future_(task_package_.get_future())
+		{
+		}
 		template <class RetType, class ... RetParamType, class ... ParamType>
 		task(RetType(* func)(RetParamType ...), ParamType && ... args) :
-			task_package_(std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...)),
+			task_package_(std::bind(func, stpi___::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_function_([this] { task_package_(); }),
 			task_future_(task_package_.get_future())
 		{
 		}
 		template <class RetType, class ObjType, class ... RetParamType, class ... ParamType>
 		task(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args) :
-			task_package_(std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...)),
+			task_package_(std::bind(func, obj, stpi___::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_function_([this] { task_package_(); }),
 			task_future_(task_package_.get_future())
 		{
@@ -158,15 +242,17 @@ namespace stp
 
 		void operator()()
 		{
-			if (task_future_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+			if (!task_result_)
 			{
 				task_function_();
+				task_result_ = true;
 			}
 		}
 	private:
 		std::packaged_task<void()> task_package_;
 		std::function<void()> task_function_;
 		std::future<void> task_future_;
+		bool task_result_ = false;
 
 		friend class threadpool;
 	};
@@ -178,19 +264,35 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
+				auto it = thread_array_.begin(), it_e = thread_array_.end();
+				while (it != it_e)
+				{
+					if (it->thread_state_ == thread_state_t::terminating && !it->task_.function_)
+					{
+						it->thread_.join();
+						it = thread_array_.erase(it);
+						continue;
+					}
+					++it;
+				}
+
 				for (size_t n = 0u; n < amount; ++n)
 				{
 					thread_array_.emplace_back(&threadpool::threadpool__, this);
 				}
+
+				threadpool_size_ += amount;
 			}
 		}
 		void delete_threads(size_t const amount)
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
+				std::scoped_lock<std::shared_mutex> lock(thread_mutex_);
+
 				if (threadpool_size_ < amount)
 				{
-					throw std::invalid_argument("Threadpool bad argument");
+					throw std::invalid_argument("Amount can't be greater than threadpool size");
 				}
 
 				auto it = thread_array_.begin(), it_b = thread_array_.begin(), it_e = thread_array_.end();
@@ -198,16 +300,12 @@ namespace stp
 				{
 					if (it->thread_state_ != thread_state_t::terminating && !it->task_.function_)
 					{
-						std::unique_lock<std::shared_mutex> lock(thread_mutex_, std::try_to_lock);
-
-						if (lock.owns_lock() && !it->task_.function_)
-						{
-							it->thread_state_ = thread_state_t::terminating;
-							++n;
-						}
+						it->thread_state_ = thread_state_t::terminating;
+						++n;
 					}
 				}
 
+				threadpool_size_ -= amount;
 				thread_alert_.notify_all();
 			}
 		}
@@ -219,12 +317,22 @@ namespace stp
 				new_task__(&task.task_function_, false, false, priority);
 			}
 		}
+		template <class RetType>
+		void new_task(std::function<RetType()> & task, task_priority const priority = task_priority::normal)
+		{
+			if (thread_state_ != thread_state_t::terminating)
+			{
+				auto task_function = new std::function<void()>([=] { task(); });
+
+				new_task__(task_function_, false, true, priority);
+			}
+		}
 		template <class RetType, class ... RetParamType, class ... ParamType>
 		void new_task(RetType(* func)(RetParamType ...), ParamType && ... args)
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task = std::bind(func, stpi___::value_wrapper(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				new_task__(task_function, false, true, task_priority::normal);
@@ -235,7 +343,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task = std::bind(func, obj, stpi___::value_wrapper(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				new_task__(task_function, false, true, task_priority::normal);
@@ -246,7 +354,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task = std::bind(func, stpi___::value_wrapper(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				new_task__(task_function, false, true, priority);
@@ -258,7 +366,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task = std::bind(func, obj, stpi___::value_wrapper(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				new_task__(task_function, false, true, priority);
@@ -272,12 +380,22 @@ namespace stp
 				new_task__(&task.task_function_, true, false, priority);
 			}
 		}
+		template <class RetType>
+		void new_sync_task(std::function<RetType()> & task, task_priority const priority = task_priority::normal)
+		{
+			if (thread_state_ != thread_state_t::terminating)
+			{
+				auto task_function = new std::function<void()>([=] { task(); });
+
+				new_task__(task_function_, true, true, priority);
+			}
+		}
 		template <class RetType, class ... RetParamType, class ... ParamType>
 		void new_sync_task(RetType(* func)(RetParamType ...), ParamType && ... args)
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task = std::bind(func, stpi___::value_wrapper(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				new_task__(task_function, true, true, task_priority::normal);
@@ -288,7 +406,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task = std::bind(func, obj, stpi___::value_wrapper(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				new_task__(task_function, true, true, task_priority::normal);
@@ -299,7 +417,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(func, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task = std::bind(func, stpi___::value_wrapper(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				new_task__(task_function, true, true, priority);
@@ -311,7 +429,7 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				auto task = std::bind(func, obj, stpi___::value_wrapper__(std::forward<ParamType>(args)) ...);
+				auto task = std::bind(func, obj, stpi___::value_wrapper(std::forward<ParamType>(args)) ...);
 				auto task_function = new std::function<void()>([=] { task(); });
 
 				new_task__(task_function, true, true, priority);
@@ -348,18 +466,18 @@ namespace stp
 					task_queue_.pop();
 				}
 
-				for (auto & thread_ : thread_array_)
+				for (auto & thread : thread_array_)
 				{
-					std::unique_lock<std::mutex> lock(thread_.task_mutex_, std::try_to_lock);
+					std::unique_lock<std::mutex> lock(thread.task_mutex_, std::try_to_lock);
 
 					if (lock.owns_lock())
 					{
-						if (thread_.task_.dynamic_function_)
+						if (thread.task_.dynamic_function_)
 						{
-							delete thread_.task_.function_;
+							delete thread.task_.function_;
 						}
-						thread_.task_.function_ = nullptr;
-						thread_.task_.priority_ = 0u;
+						thread.task_.function_ = nullptr;
+						thread.task_.priority_ = 0u;
 					}
 				}
 
@@ -402,7 +520,7 @@ namespace stp
 		}
 		void run()
 		{
-			if (thread_state_ == thread_state_t::waiting)
+			if (thread_state_ == thread_state_t::stopping)
 			{
 				std::scoped_lock<std::shared_mutex, std::shared_mutex> lock(thread_mutex_, thread_sync_mutex_);
 
@@ -410,13 +528,13 @@ namespace stp
 				thread_alert_.notify_all();
 			}
 		}
-		void wait()
+		void stop()
 		{
 			if (thread_state_ == thread_state_t::running)
 			{
 				std::scoped_lock<std::shared_mutex, std::shared_mutex> lock(thread_mutex_, thread_sync_mutex_);
 
-				thread_state_ = thread_state_t::waiting;
+				thread_state_ = thread_state_t::stopping;
 			}
 		}
 		void terminate()
@@ -426,9 +544,26 @@ namespace stp
 				std::scoped_lock<std::shared_mutex, std::shared_mutex> lock(thread_mutex_, thread_sync_mutex_);
 
 				thread_state_ = thread_state_t::terminating;
+				threadpool_size_ = 0u;
 				thread_alert_.notify_all();
 				thread_sync_alert_.notify_all();
 			}
+		}
+		size_t size() const
+		{
+			return threadpool_size_;
+		}
+		threadpool_state state() const
+		{
+			return thread_state_;
+		}
+		bool notify() const
+		{
+			return threadpool_notify_new_tasks_;
+		}
+		size_t active() const
+		{
+			return thread_active_;
 		}
 		size_t running() const
 		{
@@ -446,35 +581,24 @@ namespace stp
 		{
 			return thread_sync_waiting_;
 		}
-		size_t size() const
-		{
-			return threadpool_size_;
-		}
-		threadpool_state state() const
-		{
-			return thread_state_;
-		}
-		bool notify() const
-		{
-			return threadpool_notify_new_tasks_;
-		}
 
 		threadpool(size_t const size = std::thread::hardware_concurrency(),
 				   threadpool_state const state = threadpool_state::running,
 				   bool const notify = true) :
-			threadpool_size_(0u),
+			threadpool_size_(size),
 			thread_state_(state),
 			task_priority_(0u),
 			threadpool_notify_new_tasks_(notify),
 			threadpool_new_tasks_(0u),
 			threadpool_ready_sync_tasks_(0u),
 			threadpool_run_sync_tasks_(0u),
+			thread_active_(0u),
 			thread_running_(0u),
 			thread_waiting_(0u),
 			thread_sync_running_(0u),
 			thread_sync_waiting_(0u)
 		{
-			for (size_t n = 0u; n < size; ++n)
+			for (size_t n = 0u; n < threadpool_size_; ++n)
 			{
 				thread_array_.emplace_back(&threadpool::threadpool__, this);
 			}
@@ -492,7 +616,7 @@ namespace stp
 				thread_state_ = thread_state_t::terminating;
 			}
 
-			while (threadpool_size_ > 0)
+			while (thread_active_ > 0)
 			{
 				thread_alert_.notify_all();
 				thread_sync_alert_.notify_all();
@@ -500,9 +624,9 @@ namespace stp
 				std::this_thread::yield();
 			}
 
-			for (auto & thread_ : thread_array_)
+			for (auto & thread : thread_array_)
 			{
-				thread_.thread_.join();
+				thread.thread_.join();
 			}
 		}
 	private:
@@ -564,11 +688,11 @@ namespace stp
 			}
 		};
 
-		std::atomic<size_t> threadpool_size_;
+		size_t threadpool_size_;
 		std::list<thread_t> thread_array_;
 		std::priority_queue<task_t, std::deque<task_t>, bool(*)(task_t const &, task_t const &)> task_queue_
 		{
-			[](task_t const & task_1, task_t const & task_2)
+			[] (task_t const & task_1, task_t const & task_2)
 			{
 				return (task_1.priority_ != task_2.priority_ ?
 						task_1.priority_ < task_2.priority_ :
@@ -583,6 +707,7 @@ namespace stp
 		std::atomic<size_t> threadpool_ready_sync_tasks_;
 		std::atomic<size_t> threadpool_run_sync_tasks_;
 
+		std::atomic<size_t> thread_active_;
 		std::atomic<size_t> thread_running_;
 		std::atomic<size_t> thread_waiting_;
 		std::atomic<size_t> thread_sync_running_;
@@ -640,7 +765,7 @@ namespace stp
 							--threadpool_run_sync_tasks_;
 							break;
 						}
-					case thread_state_t::waiting:
+					case thread_state_t::stopping:
 						continue;
 					case thread_state_t::terminating:
 						return;
@@ -654,7 +779,7 @@ namespace stp
 							threadpool_run_task__(this_thread);
 						}
 						return;
-					case thread_state_t::waiting:
+					case thread_state_t::stopping:
 						++threadpool_ready_sync_tasks_;
 						continue;
 					case thread_state_t::terminating:
@@ -667,7 +792,7 @@ namespace stp
 			std::shared_lock<std::shared_mutex> lock(thread_mutex_, std::defer_lock);
 			std::shared_lock<std::shared_mutex> sync_lock(thread_sync_mutex_, std::defer_lock);
 
-			++threadpool_size_;
+			++thread_active_;
 
 			while (this_thread->thread_state_ != thread_state_t::terminating)
 			{
@@ -676,9 +801,9 @@ namespace stp
 				while (thread_state_ != thread_state_t::terminating
 					   && this_thread->thread_state_ != thread_state_t::terminating
 					   && ((!threadpool_new_tasks_ && !this_thread->task_.function_)
-					   || (!threadpool_new_tasks_ && thread_state_ == thread_state_t::waiting)
+					   || (!threadpool_new_tasks_ && thread_state_ == thread_state_t::stopping)
 					   || (task_priority_ <= this_thread->task_.priority_
-					   && this_thread->task_.function_ && thread_state_ == thread_state_t::waiting)))
+					   && this_thread->task_.function_ && thread_state_ == thread_state_t::stopping)))
 				{
 					++thread_waiting_;
 
@@ -697,7 +822,7 @@ namespace stp
 				switch (this_thread->thread_state_)
 				{
 					case thread_state_t::running:
-					case thread_state_t::waiting:
+					case thread_state_t::stopping:
 						if (!this_thread->task_.function_)
 						{
 							if (threadpool_new_tasks_ > 0)
@@ -746,7 +871,7 @@ namespace stp
 							threadpool_run_task__(this_thread);
 							break;
 						}
-					case thread_state_t::waiting:
+					case thread_state_t::stopping:
 						if (this_thread->task_.function_ && this_thread->task_.sync_function_)
 						{
 							threadpool_sync_task__(this_thread, sync_lock);
@@ -756,7 +881,7 @@ namespace stp
 				}
 			}
 
-			--threadpool_size_;
+			--thread_active_;
 		}
 	};
 }
