@@ -324,7 +324,7 @@ namespace stp
 			{
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				new_task__(task_function_, false, true, priority);
+				new_task__(task_function, false, true, priority);
 			}
 		}
 		template <class RetType, class ... RetParamType, class ... ParamType>
@@ -387,7 +387,7 @@ namespace stp
 			{
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				new_task__(task_function_, true, true, priority);
+				new_task__(task_function, true, true, priority);
 			}
 		}
 		template <class RetType, class ... RetParamType, class ... ParamType>

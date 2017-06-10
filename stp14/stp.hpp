@@ -45,7 +45,7 @@ namespace stp
 			return std::bind(std::move<ParamType &>, arg);
 		}
 
-		// C++14 equivalents
+		// C++14 equivalence to C++17
 		typedef std::shared_timed_mutex shared_mutex;
 
 		template <class ... Mutex>
@@ -364,7 +364,7 @@ namespace stp
 			{
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				new_task__(task_function_, false, true, priority);
+				new_task__(task_function, false, true, priority);
 			}
 		}
 		template <class RetType, class ... RetParamType, class ... ParamType>
@@ -427,7 +427,7 @@ namespace stp
 			{
 				auto task_function = new std::function<void()>([=] { task(); });
 
-				new_task__(task_function_, true, true, priority);
+				new_task__(task_function, true, true, priority);
 			}
 		}
 		template <class RetType, class ... RetParamType, class ... ParamType>

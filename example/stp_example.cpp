@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <random>
 
-#define OUTPUT_TO_FILE_ 0
-#define TEST_ITERATIONS_ 1
+#define OUTPUT_TO_FILE_ 1
+#define TEST_ITERATIONS_ 1000
 
 std::random_device seed;
 std::mt19937 generate(seed());
@@ -17,10 +17,7 @@ thread_local std::chrono::time_point<std::chrono::high_resolution_clock> start_t
 double generator(std::vector<int> & vec)
 {
 	start_timer = std::chrono::high_resolution_clock::now();
-	for (auto & i : vec)
-	{
-		i = random_list(generate);
-	}
+	for (auto & v : vec) v = random_list(generate);
 	stop_timer = std::chrono::high_resolution_clock::now();
 	return std::chrono::duration<double, std::nano>(stop_timer - start_timer).count();
 }
@@ -37,15 +34,17 @@ int main()
 {
 	std::setvbuf(stdout, nullptr, _IOFBF, BUFSIZ);
 
+	std::cout << "Testing started...\n" << std::scientific << std::endl;
+
 #if (OUTPUT_TO_FILE_ == 1)
 	std::fstream fout("stp_tests.txt", std::ios::out | std::ios::trunc);
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
 
-	std::cout << std::scientific;
-
 	for (size_t n = 1; n <= TEST_ITERATIONS_; ++n)
 	{
+		std::cout << "n = " << n << "\n";
+
 		std::vector<int> vec_00(1000000);
 		std::vector<int> vec_01(1000000);
 		std::vector<int> vec_02(1000000);
@@ -64,7 +63,7 @@ int main()
 		std::vector<int> vec_15(1000000);
 		std::vector<int> vec_16(1000000);
 
-		std::cout << "Generating 16 vectors...\n\n";
+		std::cout << "\nGenerating 16 vectors...\n\n";
 
 		generator(vec_00);
 
@@ -85,8 +84,7 @@ int main()
 		std::cout << "Elapsed on vector 15: " << generator(vec_15) << "ns\n";
 		std::cout << "Elapsed on vector 16: " << generator(vec_16) << "ns\n";
 
-		std::cout << "\nn = " << n << "\n\n";
-		std::cout << "Sorting 16 vectors...\n";
+		std::cout << "\nSorting 16 vectors...\n";
 
 		stp::threadpool threadpool(1, stp::threadpool_state::stopping);	// Default: std::thread::hardware_concurrency()
 																		// Default: stp::threadpool_state::running
@@ -366,17 +364,15 @@ int main()
 		std::cout << "Elapsed on vector 13: " << task_13.result() << "ns\n";
 		std::cout << "Elapsed on vector 14: " << task_14.result() << "ns\n";
 		std::cout << "Elapsed on vector 15: " << task_15.result() << "ns\n";
-		std::cout << "Elapsed on vector 16: " << task_16.result() << "ns\n";
+		std::cout << "Elapsed on vector 16: " << task_16.result() << "ns\n" << std::endl;
 	}
 	
-	std::cout << "\nTesting finished\n";
-
 #if OUTPUT_TO_FILE_ == 1
 	fout.close();
 	std::cout.rdbuf(cout_buffer);
 #endif
 
-	std::cout << "\nPress enter to exit\n";
+	std::cout << "Testing finished\n\nPress enter to exit\n";
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
 	return 0;
