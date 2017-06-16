@@ -92,9 +92,9 @@ namespace stp
 	public:
 		bool ready()
 		{
-			return task_ready_ || (task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready ? 
-								   (task_result_ = std::move(task_future_.get())), (task_ready_ = true) : 
-								   false);
+			return task_ready_ || (task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready 
+								   ? (task_result_ = std::move(task_future_.get())), (task_ready_ = true)
+								   : false);
 		}
 		void wait()
 		{
@@ -200,9 +200,9 @@ namespace stp
 	public:
 		bool ready()
 		{
-			return task_ready_ || (task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready ?
-								   (task_ready_ = true) :
-								   false);
+			return task_ready_ || (task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready
+								   ? (task_ready_ = true) 
+								   : false);
 		}
 		void wait()
 		{
@@ -594,9 +594,9 @@ namespace stp
 		{
 			[] (task_t const & task_1, task_t const & task_2)
 			{
-				return (task_1.priority_ != task_2.priority_ ?
-						task_1.priority_ < task_2.priority_ :
-						task_1.creation_ > task_2.creation_);
+				return (task_1.priority_ != task_2.priority_
+						? task_1.priority_ < task_2.priority_
+						: task_1.creation_ > task_2.creation_);
 			}
 		};
 		thread_state_t thread_state_;
@@ -747,7 +747,7 @@ namespace stp
 
 										this_thread->task_ = task_queue_.top();
 										task_queue_.pop();
-										task_priority_ = (task_queue_.empty() ? 0u : task_queue_.top().priority_);
+										task_priority_ = (!task_queue_.empty() ? task_queue_.top().priority_ : 0u);
 
 										break;
 									}
@@ -766,7 +766,7 @@ namespace stp
 										task_queue_.push(this_thread->task_);
 										this_thread->task_ = task_queue_.top();
 										task_queue_.pop();
-										task_priority_ = (task_queue_.empty() ? 0u : task_queue_.top().priority_);
+										task_priority_ = (!task_queue_.empty() ? task_queue_.top().priority_ : 0u);
 									}
 								}
 							}
