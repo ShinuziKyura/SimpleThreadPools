@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <random>
 
-#define OUTPUT_TO_FILE_ 1
-#define TEST_ITERATIONS_ 1000
+#define OUTPUT_TO_FILE_ 0
+#define TEST_ITERATIONS_ 1
 
 std::random_device seed;
 std::mt19937 generate(seed());
@@ -14,32 +14,34 @@ std::uniform_int_distribution<int> random_list(std::numeric_limits<int>::min(), 
 
 thread_local std::chrono::time_point<std::chrono::high_resolution_clock> start_timer, stop_timer;
 
-double generator(std::vector<int> & vec)
+long double generator(std::vector<int> & vec)
 {
 	start_timer = std::chrono::high_resolution_clock::now();
 	for (auto & v : vec) v = random_list(generate);
 	stop_timer = std::chrono::high_resolution_clock::now();
-	return std::chrono::duration<double, std::nano>(stop_timer - start_timer).count();
+	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
 }
 
-double sorter(std::vector<int> & vec)
+long double sorter(std::vector<int> & vec)
 {
 	start_timer = std::chrono::high_resolution_clock::now();
 	std::sort(vec.begin(), vec.end());
 	stop_timer = std::chrono::high_resolution_clock::now();
-	return std::chrono::duration<double, std::nano>(stop_timer - start_timer).count();
+	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
 }
 
 int main()
 {
 	std::setvbuf(stdout, nullptr, _IOFBF, BUFSIZ);
 
-	std::cout << "Testing started...\n" << std::scientific << std::endl;
+	std::cout << std::scientific << "Testing started...\n" << std::endl;
 
 #if (OUTPUT_TO_FILE_ == 1)
 	std::fstream fout("stp_tests.txt", std::ios::out | std::ios::trunc);
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
+
+	auto start_test = std::chrono::high_resolution_clock::now();
 
 	for (size_t n = 1; n <= TEST_ITERATIONS_; ++n)
 	{
@@ -89,23 +91,23 @@ int main()
 		stp::threadpool threadpool(1, stp::threadpool_state::stopping);	// Default: std::thread::hardware_concurrency()
 																		// Default: stp::threadpool_state::running
 																		// Default: true
-		stp::task<double> task_00(sorter, vec_00);
-		stp::task<double> task_01(sorter, vec_01);
-		stp::task<double> task_02(sorter, vec_02);
-		stp::task<double> task_03(sorter, vec_03);
-		stp::task<double> task_04(sorter, vec_04);
-		stp::task<double> task_05(sorter, vec_05);
-		stp::task<double> task_06(sorter, vec_06);
-		stp::task<double> task_07(sorter, vec_07);
-		stp::task<double> task_08(sorter, vec_08);
-		stp::task<double> task_09(sorter, vec_09);
-		stp::task<double> task_10(sorter, vec_10);
-		stp::task<double> task_11(sorter, vec_11);
-		stp::task<double> task_12(sorter, vec_12);
-		stp::task<double> task_13(sorter, vec_13);
-		stp::task<double> task_14(sorter, vec_14);
-		stp::task<double> task_15(sorter, vec_15);
-		stp::task<double> task_16(sorter, vec_16);
+		stp::task<long double> task_00(sorter, vec_00);
+		stp::task<long double> task_01(sorter, vec_01);
+		stp::task<long double> task_02(sorter, vec_02);
+		stp::task<long double> task_03(sorter, vec_03);
+		stp::task<long double> task_04(sorter, vec_04);
+		stp::task<long double> task_05(sorter, vec_05);
+		stp::task<long double> task_06(sorter, vec_06);
+		stp::task<long double> task_07(sorter, vec_07);
+		stp::task<long double> task_08(sorter, vec_08);
+		stp::task<long double> task_09(sorter, vec_09);
+		stp::task<long double> task_10(sorter, vec_10);
+		stp::task<long double> task_11(sorter, vec_11);
+		stp::task<long double> task_12(sorter, vec_12);
+		stp::task<long double> task_13(sorter, vec_13);
+		stp::task<long double> task_14(sorter, vec_14);
+		stp::task<long double> task_15(sorter, vec_15);
+		stp::task<long double> task_16(sorter, vec_16);
 
 		task_00();
 		auto sleep_time = std::chrono::nanoseconds(static_cast<uint32_t>(task_00.result() * 2 / std::thread::hardware_concurrency()));
@@ -159,9 +161,9 @@ int main()
 
 		stop_timer = std::chrono::high_resolution_clock::now();
 
-		std::cout << "\tElapsed on first test: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << "ns\n";
+		std::cout << "\tElapsed on first test: " << std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count() << "ns\n";
 
-		threadpool.new_threads(3);
+		threadpool.resize(4);
 
 		// ===== Second test =====
 
@@ -198,11 +200,11 @@ int main()
 
 		stop_timer = std::chrono::high_resolution_clock::now();
 
-		std::cout << "\tElapsed on second test: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << "ns\n";
+		std::cout << "\tElapsed on second test: " << std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count() << "ns\n";
 
 		threadpool.notify_new_tasks(false);
 
-		threadpool.delete_threads(2);
+		threadpool.resize(2);
 
 		// ===== Third test =====
 
@@ -281,11 +283,11 @@ int main()
 
 		stop_timer = std::chrono::high_resolution_clock::now();
 
-		std::cout << "\tElapsed on third test: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << "ns\n";
+		std::cout << "\tElapsed on third test: " << std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count() << "ns\n";
 
 		threadpool.stop();
 
-		threadpool.new_threads(6);
+		threadpool.resize(8);
 
 		// ===== Fourth test =====
 
@@ -343,7 +345,7 @@ int main()
 
 		stop_timer = std::chrono::high_resolution_clock::now();
 
-		std::cout << "\tElapsed on fourth test: " << std::chrono::duration<double, std::nano>(stop_timer - start_timer).count() << "ns\n\n";
+		std::cout << "\tElapsed on fourth test: " << std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count() << "ns\n\n";
 
 		threadpool.terminate();
 
@@ -366,13 +368,16 @@ int main()
 		std::cout << "Elapsed on vector 15: " << task_15.result() << "ns\n";
 		std::cout << "Elapsed on vector 16: " << task_16.result() << "ns\n" << std::endl;
 	}
-	
+
+	auto stop_test = std::chrono::high_resolution_clock::now();
+
 #if OUTPUT_TO_FILE_ == 1
 	fout.close();
 	std::cout.rdbuf(cout_buffer);
 #endif
 
-	std::cout << "Testing finished\n\nPress enter to exit\n";
+	std::cout << "Testing finished\nElapsed on test: " << std::chrono::duration<long double>(stop_test - start_test).count() << "s\n\nPress enter to exit\n";
+
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
 	return 0;
