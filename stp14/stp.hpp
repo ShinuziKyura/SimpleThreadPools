@@ -11,27 +11,22 @@ namespace stp
 {
 	namespace stpi // Implementation namespace
 	{
-		template <class ParamType, typename = typename std::enable_if<std::is_lvalue_reference<ParamType>::value>::type>
-		static constexpr auto value_wrapper(ParamType && arg) -> decltype(std::ref(arg))
+		template <class ParamType, class = typename std::enable_if<std::is_lvalue_reference<ParamType>::value>::type>
+		constexpr auto value_wrapper(ParamType && arg) -> decltype(std::ref(arg))
 		{
 			return std::ref(arg);
 		}
-		template <class ParamType, typename = typename std::enable_if<std::is_rvalue_reference<ParamType>::value>::type>
-		static constexpr auto value_wrapper(ParamType && arg) -> decltype(arg)
-		{
-			return arg;
-		}
-		template <class ParamType, typename = typename std::enable_if<!std::is_reference<ParamType>::value>::type>
-		static constexpr auto value_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
+		template <class ParamType, class = typename std::enable_if<!std::is_lvalue_reference<ParamType>::value>::type>
+		constexpr auto value_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
 		{
 			return std::bind(std::move<ParamType &>, arg);
 		}
 
 		// C++14 equivalence to C++17
+
 		typedef std::shared_timed_mutex shared_mutex;
 
-		template <class ... Mutex>
-		class scoped_lock;
+		template <class ... Mutex> class scoped_lock;
 
 		template <class Mutex0>
 		class scoped_lock<Mutex0>
@@ -140,7 +135,7 @@ namespace stp
 		{
 		}
 		template <class ClosureType,
-			typename = typename std::enable_if<std::is_convertible<ClosureType, std::function<RetType()>>::value>::type>
+			class = typename std::enable_if<std::is_convertible<ClosureType, std::function<RetType()>>::value>::type>
 		task<RetType>(ClosureType const & func) :
 			task_package_(func),
 			task_future_(task_package_.get_future())
@@ -159,14 +154,14 @@ namespace stp
 		{
 		}
 		template <class ... RetParamType, class ... ParamType,
-			typename = typename std::enable_if<!std::is_same<RetParamType ..., ParamType ...>::value>::type>
+			class = typename std::enable_if<!std::is_same<RetParamType ..., ParamType ...>::value>::type>
 		task<RetType>(RetType(* func)(RetParamType ...), ParamType && ... args) :
 			task_package_(std::bind(func, stpi::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_future_(task_package_.get_future())
 		{
 		}
 		template <class ObjType, class ... RetParamType, class ... ParamType,
-			typename = typename std::enable_if<!std::is_same<RetParamType ..., ParamType ...>::value>::type>
+			class = typename std::enable_if<!std::is_same<RetParamType ..., ParamType ...>::value>::type>
 		task<RetType>(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args) :
 			task_package_(std::bind(func, obj, stpi::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_future_(task_package_.get_future())
