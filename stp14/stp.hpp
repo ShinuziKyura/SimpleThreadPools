@@ -77,7 +77,7 @@ namespace stp
 	enum class threadpool_state : uint16_t
 	{
 		running = 0u,
-		stopping = 1u,
+		waiting = 1u,
 		terminating = 2u
 	};
 
@@ -380,7 +380,7 @@ namespace stp
 		}
 		void run()
 		{
-			if (thread_state_ == thread_state_t::stopping)
+			if (thread_state_ == thread_state_t::waiting)
 			{
 				stpi::scoped_lock<stpi::shared_mutex, stpi::shared_mutex> lock(thread_state_mutex_, thread_sync_mutex_);
 
@@ -388,13 +388,13 @@ namespace stp
 				thread_state_condvar_.notify_all();
 			}
 		}
-		void stop()
+		void wait()
 		{
 			if (thread_state_ == thread_state_t::running)
 			{
 				stpi::scoped_lock<stpi::shared_mutex, stpi::shared_mutex> lock(thread_state_mutex_, thread_sync_mutex_);
 
-				thread_state_ = thread_state_t::stopping;
+				thread_state_ = thread_state_t::waiting;
 			}
 		}
 		void terminate()
@@ -446,7 +446,7 @@ namespace stp
 					{
 						if (it->thread_state_ == thread_state_t::running && !it->task_.function_)
 						{
-							it->thread_state_ = thread_state_t::stopping;
+							it->thread_state_ = thread_state_t::waiting;
 							++n;
 						}
 					}
@@ -674,7 +674,7 @@ namespace stp
 							--threadpool_run_sync_tasks_;
 							break;
 						}
-					case thread_state_t::stopping:
+					case thread_state_t::waiting:
 						continue;
 					case thread_state_t::terminating:
 						return;
@@ -688,7 +688,7 @@ namespace stp
 							threadpool_run_task__(this_thread);
 						}
 						return;
-					case thread_state_t::stopping:
+					case thread_state_t::waiting:
 						++threadpool_ready_sync_tasks_;
 						continue;
 					case thread_state_t::terminating:
@@ -704,16 +704,16 @@ namespace stp
 			++thread_active_;
 
 			while (thread_state_ != thread_state_t::terminating
-				   && this_thread->thread_state_ != thread_state_t::stopping)
+				   && this_thread->thread_state_ != thread_state_t::waiting)
 			{
 				state_lock.lock();
 
 				while (thread_state_ != thread_state_t::terminating
-					   && this_thread->thread_state_ != thread_state_t::stopping
+					   && this_thread->thread_state_ != thread_state_t::waiting
 					   && ((!threadpool_new_tasks_ && !this_thread->task_.function_)
-					   || (!threadpool_new_tasks_ && thread_state_ == thread_state_t::stopping)
+					   || (!threadpool_new_tasks_ && thread_state_ == thread_state_t::waiting)
 					   || (task_priority_ <= this_thread->task_.priority_
-					   && this_thread->task_.function_ && thread_state_ == thread_state_t::stopping)))
+					   && this_thread->task_.function_ && thread_state_ == thread_state_t::waiting)))
 				{
 					++thread_waiting_;
 
@@ -729,7 +729,7 @@ namespace stp
 					switch (thread_state_)
 					{
 						case thread_state_t::running:
-						case thread_state_t::stopping:
+						case thread_state_t::waiting:
 							if (!this_thread->task_.function_)
 							{
 								if (threadpool_new_tasks_ > 0)
@@ -778,7 +778,7 @@ namespace stp
 								threadpool_run_task__(this_thread);
 								break;
 							}
-						case thread_state_t::stopping:
+						case thread_state_t::waiting:
 							if (this_thread->task_.function_ && this_thread->task_.sync_function_)
 							{
 								threadpool_sync_task__(this_thread, sync_lock);

@@ -10,14 +10,14 @@
 
 std::random_device seed;
 std::mt19937 generate(seed());
-std::uniform_int_distribution<int> random_list(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+std::uniform_int_distribution<int> random_number(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
 
 thread_local std::chrono::time_point<std::chrono::high_resolution_clock> start_timer, stop_timer;
 
 long double generator(std::vector<int> & vec)
 {
 	start_timer = std::chrono::high_resolution_clock::now();
-	for (auto & v : vec) v = random_list(generate);
+	for (auto & v : vec) v = random_number(generate);
 	stop_timer = std::chrono::high_resolution_clock::now();
 	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
 }
@@ -88,9 +88,10 @@ int main()
 
 		std::cout << "\nSorting 16 vectors...\n";
 
-		stp::threadpool threadpool(1, stp::threadpool_state::stopping);	// Default: std::thread::hardware_concurrency()
-																		// Default: stp::threadpool_state::running
-																		// Default: true
+		stp::threadpool threadpool(1, stp::threadpool_state::waiting);	/* Default: std::thread::hardware_concurrency()
+																		 * Default: stp::threadpool_state::running
+																		 * Default: true
+																		 */
 		stp::task<long double> task_00(sorter, vec_00);
 		stp::task<long double> task_01(sorter, vec_01);
 		stp::task<long double> task_02(sorter, vec_02);
@@ -117,7 +118,7 @@ int main()
 		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
 		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
 												"running\n" :
-												(threadpool.state() == stp::threadpool_state::stopping ?
+												(threadpool.state() == stp::threadpool_state::waiting ?
 												"waiting\n" :
 												"terminating\n"));
 		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
@@ -137,7 +138,7 @@ int main()
 
 		start_timer = std::chrono::high_resolution_clock::now();
 
-		// We can wait for stp::task::result_ready() to return "true", by which time stp::task::result() shall return the value of the task
+		// We can wait for stp::task::ready() to return "true", by which time stp::task::result() shall return the value of the task
 		while (!task_01.ready() && !task_02.ready() && !task_03.ready() && !task_04.ready())
 		{
 			std::cout << "\t\tNumber of running threads: " << threadpool.running() << "\n";
@@ -172,7 +173,7 @@ int main()
 		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
 		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
 												"running\n" :
-												(threadpool.state() == stp::threadpool_state::stopping ?
+												(threadpool.state() == stp::threadpool_state::waiting ?
 												"waiting\n" :
 												"terminating\n"));
 		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
@@ -213,7 +214,7 @@ int main()
 		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
 		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
 												"running\n" :
-												(threadpool.state() == stp::threadpool_state::stopping ?
+												(threadpool.state() == stp::threadpool_state::waiting ?
 												"waiting\n" :
 												"terminating\n"));
 		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
@@ -285,7 +286,7 @@ int main()
 
 		std::cout << "\tElapsed on third test: " << std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count() << "ns\n";
 
-		threadpool.stop();
+		threadpool.wait();
 
 		threadpool.resize(8);
 
@@ -296,7 +297,7 @@ int main()
 		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
 		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
 												"running\n" :
-												(threadpool.state() == stp::threadpool_state::stopping ?
+												(threadpool.state() == stp::threadpool_state::waiting ?
 												"waiting\n" :
 												"terminating\n"));
 		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
@@ -377,7 +378,6 @@ int main()
 #endif
 
 	std::cout << "Testing finished\nElapsed on test: " << std::chrono::duration<long double>(stop_test - start_test).count() << "s\n\nPress enter to exit\n";
-
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
 	return 0;
