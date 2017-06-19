@@ -1,4 +1,4 @@
-#include "stp.hpp"
+#include "stp17.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -88,7 +88,7 @@ int main()
 
 		std::cout << "\nSorting 16 vectors...\n";
 
-		stp::threadpool threadpool(1, stp::threadpool_state::waiting);	/* Default: std::thread::hardware_concurrency()
+		stp::threadpool threadpool(1, stp::threadpool_state::stopping);	/* Default: std::thread::hardware_concurrency()
 																		 * Default: stp::threadpool_state::running
 																		 * Default: true
 																		 */
@@ -118,8 +118,8 @@ int main()
 		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
 		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
 												"running\n" :
-												(threadpool.state() == stp::threadpool_state::waiting ?
-												"waiting\n" :
+												(threadpool.state() == stp::threadpool_state::stopping ?
+												"stopping\n" :
 												"terminating\n"));
 		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
 
@@ -130,9 +130,9 @@ int main()
 		threadpool.new_task(task_03);
 		threadpool.new_task(task_04);
 
-		while (threadpool.waiting() != 1);
+		while (threadpool.stopping() != 1);
 
-		std::cout << "\t\tNumber of waiting threads: " << threadpool.waiting() << "\n";
+		std::cout << "\t\tNumber of stopping threads: " << threadpool.stopping() << "\n";
 
 		threadpool.run();
 
@@ -173,8 +173,8 @@ int main()
 		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
 		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
 												"running\n" :
-												(threadpool.state() == stp::threadpool_state::waiting ?
-												"waiting\n" :
+												(threadpool.state() == stp::threadpool_state::stopping ?
+												"stopping\n" :
 												"terminating\n"));
 		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
 
@@ -185,9 +185,9 @@ int main()
 		threadpool.new_sync_task(task_07);
 		threadpool.new_sync_task(task_08);
 
-		while (threadpool.sync_waiting() != 4);
+		while (threadpool.sync_stopping() != 4);
 
-		std::cout << "\t\tNumber of synchronized waiting threads: " << threadpool.sync_waiting() << "\n";
+		std::cout << "\t\tNumber of synchronized stopping threads: " << threadpool.sync_stopping() << "\n";
 
 		threadpool.run_sync_tasks();
 
@@ -214,8 +214,8 @@ int main()
 		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
 		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
 												"running\n" :
-												(threadpool.state() == stp::threadpool_state::waiting ?
-												"waiting\n" :
+												(threadpool.state() == stp::threadpool_state::stopping ?
+												"stopping\n" :
 												"terminating\n"));
 		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
 
@@ -226,9 +226,9 @@ int main()
 		threadpool.new_task(task_11, stp::task_priority::low);
 		threadpool.new_task(task_12, stp::task_priority::very_high);
 
-		while (threadpool.waiting() != 2);
+		while (threadpool.stopping() != 2);
 
-		std::cout << "\t\tNumber of waiting threads: " << threadpool.waiting() << "\n";
+		std::cout << "\t\tNumber of stopping threads: " << threadpool.stopping() << "\n";
 
 		threadpool.notify_new_tasks();
 
@@ -253,9 +253,9 @@ int main()
 			std::cout << "\t\tError - Some tasks done before tasks 06 and 08\n";
 		}
 
-		while (threadpool.waiting() != 2);
+		while (threadpool.stopping() != 2);
 
-		std::cout << "\t\tNumber of waiting threads: " << threadpool.waiting() << "\n";
+		std::cout << "\t\tNumber of stopping threads: " << threadpool.stopping() << "\n";
 
 		if (!task_09.ready())
 		{
@@ -286,7 +286,7 @@ int main()
 
 		std::cout << "\tElapsed on third test: " << std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count() << "ns\n";
 
-		threadpool.wait();
+		threadpool.stop();
 
 		threadpool.resize(8);
 
@@ -297,8 +297,8 @@ int main()
 		std::cout << "\n\tThreadpool size: " << threadpool.size() << "\n";
 		std::cout << "\tThreadpool state: " << (threadpool.state() == stp::threadpool_state::running ?
 												"running\n" :
-												(threadpool.state() == stp::threadpool_state::waiting ?
-												"waiting\n" :
+												(threadpool.state() == stp::threadpool_state::stopping ?
+												"stopping\n" :
 												"terminating\n"));
 		std::cout << "\tNotify threads: " << (threadpool.notify() ? "true\n" : "false\n");
 
