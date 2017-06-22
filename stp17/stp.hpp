@@ -9,19 +9,22 @@
 
 namespace stp
 {
-	namespace stpi // Implementation namespace
+	class stpi // Implementation class
 	{
 		template <class ParamType, class = typename std::enable_if<std::is_lvalue_reference<ParamType>::value>::type>
-		constexpr auto value_wrapper(ParamType && arg) -> decltype(std::ref(arg))
+		static constexpr auto value_wrapper(ParamType && arg) -> decltype(std::ref(arg))
 		{
 			return std::ref(arg);
 		}
 		template <class ParamType, class = typename std::enable_if<!std::is_lvalue_reference<ParamType>::value>::type>
-		constexpr auto value_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
+		static constexpr auto value_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
 		{
 			return std::bind(std::move<ParamType &>, arg);
 		}
-	}
+
+		template <class RetType>
+		friend class task;
+	};
 
 	enum class task_priority : uint16_t
 	{
@@ -89,14 +92,14 @@ namespace stp
 		}
 
 		task<RetType>() = delete;
-		task<RetType>(std::function<RetType()> const & func) :
+		task<RetType>(std::function<RetType()> & func) :
 			task_package_(func),
 			task_future_(task_package_.get_future())
 		{
 		}
 		template <class ClosureType,
 			class = typename std::enable_if<std::is_convertible<ClosureType, std::function<RetType()>>::value>::type>
-		task<RetType>(ClosureType const & func) :
+		task<RetType>(ClosureType & func) :
 			task_package_(func),
 			task_future_(task_package_.get_future())
 		{
@@ -187,14 +190,14 @@ namespace stp
 
 		task() = delete;
 		template <class RetType>
-		task(std::function<RetType()> const & func) :
+		task(std::function<RetType()> & func) :
 			task_package_(func),
 			task_future_(task_package_.get_future())
 		{
 		}
 		template <class RetType, class ClosureType,
 			class = typename std::enable_if<std::is_convertible<ClosureType, std::function<RetType()>>::value>::type>
-		task(ClosureType const & func) :
+		task(ClosureType & func) :
 			task_package_(func),
 			task_future_(task_package_.get_future())
 		{
@@ -371,11 +374,11 @@ namespace stp
 		}
 		void resize(size_t threadpool_size)
 		{
-			uintmax_t amount = std::abs(static_cast<intmax_t>(threadpool_size_) - static_cast<intmax_t>(threadpool_size));
-
-			if (threadpool_size_ < threadpool_size)
+			if (thread_state_ != thread_state_t::terminating)
 			{
-				if (thread_state_ != thread_state_t::terminating)
+				uintmax_t amount = abs(static_cast<intmax_t>(threadpool_size_) - static_cast<intmax_t>(threadpool_size));
+
+				if (threadpool_size_ < threadpool_size)
 				{
 					auto it = thread_array_.begin(), it_e = thread_array_.end();
 					while (it != it_e)
@@ -394,10 +397,7 @@ namespace stp
 						thread_array_.emplace_back(&threadpool::threadpool__, this);
 					}
 				}
-			}
-			else
-			{
-				if (thread_state_ != thread_state_t::terminating)
+				else
 				{
 					std::scoped_lock<std::shared_mutex> lock(thread_state_mutex_);
 
@@ -413,9 +413,9 @@ namespace stp
 
 					thread_state_condvar_.notify_all();
 				}
-			}
 
-			threadpool_size_ = threadpool_size;
+				threadpool_size_ = threadpool_size;
+			}
 		}
 		size_t size() const
 		{
@@ -507,7 +507,7 @@ namespace stp
 			bool sync_function_;
 
 			task_priority_t priority_;
-			std::chrono::high_resolution_clock::time_point creation_;
+			std::chrono::high_resolution_clock::time_point age_;
 
 			task_t(std::shared_ptr<std::function<void()>> const & function = nullptr,
 				   bool sync_function = false,
@@ -515,7 +515,7 @@ namespace stp
 				function_(function),
 				sync_function_(sync_function),
 				priority_(priority),
-				creation_(std::chrono::high_resolution_clock::now())
+				age_(std::chrono::high_resolution_clock::now())
 			{
 			}
 
@@ -551,10 +551,10 @@ namespace stp
 			{
 				return (task_1.priority_ != task_2.priority_
 						? task_1.priority_ < task_2.priority_
-						: task_1.creation_ > task_2.creation_);
+						: task_1.age_ > task_2.age_);
 			}
 		};
-		thread_state_t thread_state_;
+		std::atomic<thread_state_t> thread_state_;
 		std::atomic<task_priority_t> task_priority_;
 		bool threadpool_notify_new_tasks_;
 

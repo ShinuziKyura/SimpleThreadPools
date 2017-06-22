@@ -1,4 +1,4 @@
-#include "stp17.hpp"
+#include "stp.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -381,4 +381,4 @@ int main()
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
 	return 0;
-}
+	}
