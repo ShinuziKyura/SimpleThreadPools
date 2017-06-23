@@ -24,7 +24,8 @@ namespace stp
 
 		typedef std::shared_timed_mutex shared_mutex;
 
-		template <class ... Mutex> class scoped_lock;
+		template <class ... Mutex>
+		class scoped_lock;
 
 		template <class Mutex0>
 		class scoped_lock<Mutex0>
@@ -60,9 +61,7 @@ namespace stp
 			Mutex1 & mutex_1_;
 		};
 
-		template <class RetType>
-		friend class task;
-
+		template <class RetType> friend class task;
 		friend class threadpool;
 	};
 
@@ -91,12 +90,12 @@ namespace stp
 		bool ready()
 		{
 			return task_ready_ || (task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready 
-								   ? (task_result_ = std::move(task_future_.get())), (task_ready_ = true)
+								   ? (task_result_ = task_future_.get()), (task_ready_ = true)
 								   : false);
 		}
 		void wait()
 		{
-			task_result_ = std::move(task_future_.get());
+			task_result_ = task_future_.get();
 			task_ready_ = true;
 		}
 		template <class Rep, class Per>
@@ -105,7 +104,7 @@ namespace stp
 			auto retval = task_future_.wait_for(timeout_duration);
 			if (retval == std::future_status::ready)
 			{
-				task_result_ = std::move(task_future_.get());
+				task_result_ = task_future_.get();
 				task_ready_ = true;
 			}
 			return retval;
@@ -116,7 +115,7 @@ namespace stp
 			auto retval = task_future_.wait_until(timeout_time);
 			if (retval == std::future_status::ready)
 			{
-				task_result_ = std::move(task_future_.get());
+				task_result_ = task_future_.get();
 				task_ready_ = true;
 			}
 			return retval;
@@ -125,7 +124,7 @@ namespace stp
 		{
 			if (!task_ready_)
 			{
-				task_result_ = std::move(task_future_.get());
+				task_result_ = task_future_.get();
 				task_ready_ = true;
 			}
 			return task_result_;
@@ -179,7 +178,7 @@ namespace stp
 		RetType operator()()
 		{
 			task_package_();
-			task_result_ = std::move(task_future_.get());
+			task_result_ = task_future_.get();
 			task_ready_ = true;
 			return task_result_;
 		}
@@ -620,7 +619,7 @@ namespace stp
 			stpi::scoped_lock<std::mutex, stpi::shared_mutex> lock(thread_task_mutex_, thread_state_mutex_);
 
 			task_queue_.emplace(
-				std::move(std::make_shared<std::function<void()>>(std::function<void()>(function))),
+				std::make_shared<std::function<void()>>(std::function<void()>(function)),
 				sync_function,
 				static_cast<task_priority_t>(priority)
 			);
@@ -747,11 +746,11 @@ namespace stp
 										break;
 									}
 								}
-								continue;
 							}
 							else
 							{
-								if (threadpool_new_tasks_ > 0)
+								if (threadpool_new_tasks_ > 0
+									&& task_priority_ > this_thread->task_.priority_)
 								{
 									stpi::scoped_lock<std::mutex> task_lock(thread_task_mutex_);
 
@@ -764,8 +763,9 @@ namespace stp
 										task_priority_ = (!task_queue_.empty() ? task_queue_.top().priority_ : 0u);
 									}
 								}
+
+								break;
 							}
-							break;
 						case thread_state_t::terminating:
 							continue;
 					}
