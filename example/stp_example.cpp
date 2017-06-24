@@ -1,4 +1,4 @@
-#include "stp17.hpp"
+#include "stp.hpp"
 
 #include <iostream>
 #include <fstream>
