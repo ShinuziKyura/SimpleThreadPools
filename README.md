@@ -19,6 +19,6 @@ A simple, intuitive implementation of a threadpool class using the C++ Standard 
 
 ###### (To be expanded at a later date)
 
-To use the library, all you need to do is place the 'stp.hpp' file in your source code folder and \#include it in your source code.
+To use the library, all you need to do is place the 'stp.hpp' file in your source code folder and \#include it in your code.
 
 All the code belonging to the library (classes, functions) is part of a namespace called 'stp'.
