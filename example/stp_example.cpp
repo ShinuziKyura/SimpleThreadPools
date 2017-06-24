@@ -1,4 +1,4 @@
-#include "stp.hpp"
+#include "stp17.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -88,10 +88,10 @@ int main()
 
 		std::cout << "\nSorting 16 vectors...\n";
 
-		stp::threadpool threadpool(1, stp::threadpool_state::stopping);	/* Default: std::thread::hardware_concurrency()
-																		 * Default: stp::threadpool_state::running
-																		 * Default: true
-																		 */
+		stp::threadpool threadpool(1, true, stp::threadpool_state::stopping);	/* Default: std::thread::hardware_concurrency()
+																				 * Default: true
+																				 * Default: stp::threadpool_state::running
+																				 */
 		stp::task<long double> task_00(sorter, vec_00);
 		stp::task<long double> task_01(sorter, vec_01);
 		stp::task<long double> task_02(sorter, vec_02);
@@ -130,9 +130,9 @@ int main()
 		threadpool.new_task(task_03);
 		threadpool.new_task(task_04);
 
-		while (threadpool.stopping() != 1);
+		while (threadpool.waiting() != 1);
 
-		std::cout << "\t\tNumber of stopping threads: " << threadpool.stopping() << "\n";
+		std::cout << "\t\tNumber of waiting threads: " << threadpool.waiting() << "\n";
 
 		threadpool.run();
 
@@ -185,9 +185,9 @@ int main()
 		threadpool.new_sync_task(task_07);
 		threadpool.new_sync_task(task_08);
 
-		while (threadpool.sync_stopping() != 4);
+		while (threadpool.sync_waiting() != 4);
 
-		std::cout << "\t\tNumber of synchronized stopping threads: " << threadpool.sync_stopping() << "\n";
+		std::cout << "\t\tNumber of synchronized waiting threads: " << threadpool.sync_waiting() << "\n";
 
 		threadpool.run_sync_tasks();
 
@@ -226,9 +226,9 @@ int main()
 		threadpool.new_task(task_11, stp::task_priority::low);
 		threadpool.new_task(task_12, stp::task_priority::very_high);
 
-		while (threadpool.stopping() != 2);
+		while (threadpool.waiting() != 2);
 
-		std::cout << "\t\tNumber of stopping threads: " << threadpool.stopping() << "\n";
+		std::cout << "\t\tNumber of waiting threads: " << threadpool.waiting() << "\n";
 
 		threadpool.notify_new_tasks();
 
@@ -253,9 +253,9 @@ int main()
 			std::cout << "\t\tError - Some tasks done before tasks 06 and 08\n";
 		}
 
-		while (threadpool.stopping() != 2);
+		while (threadpool.waiting() != 2);
 
-		std::cout << "\t\tNumber of stopping threads: " << threadpool.stopping() << "\n";
+		std::cout << "\t\tNumber of waiting threads: " << threadpool.waiting() << "\n";
 
 		if (!task_09.ready())
 		{

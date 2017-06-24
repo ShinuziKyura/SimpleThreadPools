@@ -460,13 +460,13 @@ namespace stp
 		{
 			return threadpool_size_;
 		}
-		threadpool_state state() const
-		{
-			return thread_state_;
-		}
 		bool notify() const
 		{
 			return threadpool_notify_new_tasks_;
+		}
+		threadpool_state state() const
+		{
+			return thread_state_;
 		}
 		size_t active() const
 		{
@@ -476,34 +476,34 @@ namespace stp
 		{
 			return thread_running_;
 		}
-		size_t stopping() const
+		size_t waiting() const
 		{
-			return thread_stopping_;
+			return thread_waiting_;
 		}
 		size_t sync_running() const
 		{
 			return thread_sync_running_;
 		}
-		size_t sync_stopping() const
+		size_t sync_waiting() const
 		{
-			return thread_sync_stopping_;
+			return thread_sync_waiting_;
 		}
 
 		threadpool(size_t size = std::thread::hardware_concurrency(),
-				   threadpool_state state = threadpool_state::running,
-				   bool notify = true) :
+				   bool notify = true,
+				   threadpool_state state = threadpool_state::running) :
 			threadpool_size_(size),
-			thread_state_(state),
-			task_priority_(0u),
 			threadpool_notify_new_tasks_(notify),
+			thread_state_(state),
+			task_priority_(0u),			
 			threadpool_new_tasks_(0u),
 			threadpool_ready_sync_tasks_(0u),
 			threadpool_run_sync_tasks_(0u),
 			thread_active_(0u),
 			thread_running_(0u),
-			thread_stopping_(0u),
+			thread_waiting_(0u),
 			thread_sync_running_(0u),
-			thread_sync_stopping_(0u)
+			thread_sync_waiting_(0u)
 		{
 			for (size_t n = 0u; n < threadpool_size_; ++n)
 			{
@@ -593,9 +593,9 @@ namespace stp
 						: task_1.age_ > task_2.age_);
 			}
 		};
+		bool threadpool_notify_new_tasks_;
 		std::atomic<thread_state_t> thread_state_;
 		std::atomic<task_priority_t> task_priority_;
-		bool threadpool_notify_new_tasks_;
 
 		std::atomic<size_t> threadpool_new_tasks_;
 		std::atomic<size_t> threadpool_ready_sync_tasks_;
@@ -603,9 +603,9 @@ namespace stp
 
 		std::atomic<size_t> thread_active_;
 		std::atomic<size_t> thread_running_;
-		std::atomic<size_t> thread_stopping_;
+		std::atomic<size_t> thread_waiting_;
 		std::atomic<size_t> thread_sync_running_;
-		std::atomic<size_t> thread_sync_stopping_;
+		std::atomic<size_t> thread_sync_waiting_;
 
 		std::mutex thread_task_mutex_;
 		stpi::shared_mutex thread_state_mutex_;
@@ -656,11 +656,11 @@ namespace stp
 				while (thread_state_ != thread_state_t::terminating
 					   && !threadpool_run_sync_tasks_)
 				{
-					++thread_sync_stopping_;
+					++thread_sync_waiting_;
 
 					thread_sync_condvar_.wait(sync_lock);
 
-					--thread_sync_stopping_;
+					--thread_sync_waiting_;
 				}
 
 				sync_lock.unlock();
@@ -714,11 +714,11 @@ namespace stp
 					   || (task_priority_ <= this_thread->task_.priority_
 					   && this_thread->task_.function_ && thread_state_ == thread_state_t::stopping)))
 				{
-					++thread_stopping_;
+					++thread_waiting_;
 
 					thread_state_condvar_.wait(state_lock);
 
-					--thread_stopping_;
+					--thread_waiting_;
 				}
 
 				state_lock.unlock();
