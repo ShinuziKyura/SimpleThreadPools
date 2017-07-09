@@ -11,18 +11,18 @@ namespace stp
 {
 	class stpi // Implementation class
 	{
-		template <class ParamType, class = typename std::enable_if<std::is_lvalue_reference<ParamType>::value>::type>
+		template <class ParamType, class = std::enable_if_t<std::is_lvalue_reference<ParamType>::value>>
 		static constexpr auto value_wrapper(ParamType && arg) -> decltype(std::ref(arg))
 		{
 			return std::ref(arg);
 		}
-		template <class ParamType, class = typename std::enable_if<!std::is_lvalue_reference<ParamType>::value>::type>
+		template <class ParamType, class = std::enable_if_t<!std::is_lvalue_reference<ParamType>::value>>
 		static constexpr auto value_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
 		{
 			return std::bind(std::move<ParamType &>, arg);
 		}
 
-		typedef std::shared_timed_mutex shared_mutex;
+		using shared_mutex = std::shared_timed_mutex;
 
 		template <class ... Mutex>
 		class scoped_lock;
@@ -89,7 +89,7 @@ namespace stp
 	public:
 		bool ready()
 		{
-			return task_ready_ || (task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready 
+			return task_ready_ || (task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready
 								   ? (task_result_ = task_future_.get()), (task_ready_ = true)
 								   : false);
 		}
@@ -131,14 +131,9 @@ namespace stp
 		}
 
 		task<RetType>() = delete;
-		task<RetType>(std::function<RetType()> & func) :
-			task_package_(func),
-			task_future_(task_package_.get_future())
-		{
-		}
-		template <class ClosureType,
-			class = typename std::enable_if<std::is_convertible<ClosureType, std::function<RetType()>>::value>::type>
-		task<RetType>(ClosureType & func) :
+		template <class FuncType,
+			class = std::enable_if_t<std::is_convertible<FuncType, std::function<RetType()>>::value>>
+		task<RetType>(FuncType & func) :
 			task_package_(func),
 			task_future_(task_package_.get_future())
 		{
@@ -156,14 +151,14 @@ namespace stp
 		{
 		}
 		template <class ... RetParamType, class ... ParamType,
-			class = typename std::enable_if<!std::is_same<RetParamType ..., ParamType ...>::value>::type>
+			class = std::enable_if_t<!std::is_same<RetParamType ..., ParamType ...>::value>>
 		task<RetType>(RetType(* func)(RetParamType ...), ParamType && ... args) :
 			task_package_(std::bind(func, stpi::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_future_(task_package_.get_future())
 		{
 		}
 		template <class ObjType, class ... RetParamType, class ... ParamType,
-			class = typename std::enable_if<!std::is_same<RetParamType ..., ParamType ...>::value>::type>
+			class = std::enable_if_t<!std::is_same<RetParamType ..., ParamType ...>::value>>
 		task<RetType>(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args) :
 			task_package_(std::bind(func, obj, stpi::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_future_(task_package_.get_future())
@@ -198,7 +193,7 @@ namespace stp
 		bool ready()
 		{
 			return task_ready_ || (task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready
-								   ? (task_ready_ = true) 
+								   ? (task_ready_ = true)
 								   : false);
 		}
 		void wait()
@@ -228,41 +223,35 @@ namespace stp
 		}
 
 		task() = delete;
-		template <class RetType>
-		task(std::function<RetType()> & func) :
+		template <class FuncType,
+			class = std::enable_if_t<std::is_convertible<FuncType, std::function<void()>>::value>>
+			task(FuncType & func) :
 			task_package_(func),
 			task_future_(task_package_.get_future())
 		{
 		}
-		template <class RetType, class ClosureType,
-			typename = typename std::enable_if<std::is_convertible<ClosureType, std::function<RetType()>>::value>::type>
-		task(ClosureType & func) :
-			task_package_(func),
-			task_future_(task_package_.get_future())
-		{
-		}
-		template <class RetType, class ... ParamType>
-		task(RetType(* func)(ParamType ...), ParamType && ... args) :
+		template <class ... ParamType>
+		task(void(* func)(ParamType ...), ParamType && ... args) :
 			task_package_(std::bind(func, stpi::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_future_(task_package_.get_future())
 		{
 		}
-		template <class RetType, class ObjType, class ... ParamType>
-		task(RetType(ObjType::* func)(ParamType ...), ObjType * obj, ParamType && ... args) :
+		template <class ObjType, class ... ParamType>
+		task(void(ObjType::* func)(ParamType ...), ObjType * obj, ParamType && ... args) :
 			task_package_(std::bind(func, obj, stpi::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_future_(task_package_.get_future())
 		{
 		}
-		template <class RetType, class ... RetParamType, class ... ParamType,
-			typename = typename std::enable_if<!std::is_same<RetParamType ..., ParamType ...>::value>::type>
-		task(RetType(* func)(RetParamType ...), ParamType && ... args) :
+		template <class ... RetParamType, class ... ParamType,
+			class = std::enable_if_t<!std::is_same<RetParamType ..., ParamType ...>::value>>
+			task(void(* func)(RetParamType ...), ParamType && ... args) :
 			task_package_(std::bind(func, stpi::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_future_(task_package_.get_future())
 		{
 		}
-		template <class RetType, class ObjType, class ... RetParamType, class ... ParamType,
-			typename = typename std::enable_if<!std::is_same<RetParamType ..., ParamType ...>::value>::type>
-		task(RetType(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args) :
+		template <class ObjType, class ... RetParamType, class ... ParamType,
+			class = std::enable_if_t<!std::is_same<RetParamType ..., ParamType ...>::value>>
+			task(void(ObjType::* func)(RetParamType ...), ObjType * obj, ParamType && ... args) :
 			task_package_(std::bind(func, obj, stpi::value_wrapper(std::forward<ParamType>(args)) ...)),
 			task_future_(task_package_.get_future())
 		{
@@ -415,7 +404,8 @@ namespace stp
 		{
 			if (thread_state_ != thread_state_t::terminating)
 			{
-				uintmax_t amount = abs(static_cast<intmax_t>(threadpool_size_) - static_cast<intmax_t>(threadpool_size));
+				uintmax_t amount = abs(static_cast<intmax_t>(threadpool_size_) - 
+									   static_cast<intmax_t>(threadpool_size));
 
 				if (threadpool_size_ < threadpool_size)
 				{
@@ -537,8 +527,8 @@ namespace stp
 			}
 		}
 	private:
-		typedef uint16_t task_priority_t;
-		typedef threadpool_state thread_state_t;
+		using task_priority_t = uint16_t;
+		using thread_state_t = threadpool_state;
 
 		struct task_t
 		{
@@ -613,13 +603,13 @@ namespace stp
 		std::condition_variable_any thread_state_condvar_;
 		std::condition_variable_any thread_sync_condvar_;
 
-		template <class ClosureType>
-		void new_task__(ClosureType function, bool sync_function, task_priority priority)
+		template <class FuncType>
+		void new_task__(FuncType function, bool sync_function, task_priority priority)
 		{
 			stpi::scoped_lock<std::mutex, stpi::shared_mutex> lock(thread_task_mutex_, thread_state_mutex_);
 
 			task_queue_.emplace(
-				std::make_shared<std::function<void()>>(std::function<void()>(function)),
+				std::make_shared<std::function<void()>>(static_cast<std::function<void()>>(function)),
 				sync_function,
 				static_cast<task_priority_t>(priority)
 			);
