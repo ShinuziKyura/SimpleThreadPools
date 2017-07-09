@@ -569,7 +569,7 @@ namespace stp
 			std::scoped_lock<std::mutex, std::shared_mutex> lock(thread_task_mutex_, thread_state_mutex_);
 
 			task_queue_.emplace(
-				std::make_shared<std::function<void()>>(function),
+				std::make_shared<std::function<void()>>(static_cast<std::function<void()>>(function)),
 				sync_function,
 				static_cast<task_priority_t>(priority)
 			);
