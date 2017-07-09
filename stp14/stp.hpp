@@ -90,7 +90,7 @@ namespace stp
 		bool ready()
 		{
 			return task_ready_ || (task_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready
-								   ? (task_result_ = task_future_.get()), (task_ready_ = true)
+								   ? (task_result_ = task_future_.get(), task_ready_ = true)
 								   : false);
 		}
 		void wait()
