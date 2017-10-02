@@ -2,8 +2,9 @@
 #define SIMPLE_THREAD_POOLS_HPP_
 
 #include <future>
-#include <shared_mutex>
 #include <functional>
+#include <any>
+#include <shared_mutex>
 #include <list>
 #include <queue>
 
@@ -25,39 +26,62 @@ namespace stp // C++17 version
 		terminating			= 0b0001
 	};
 
-	template <class RetType>
+	template <class RetType, class ... ParamType>
 	class task
 	{
 	public:
 		using result_type = RetType;
 
-		RetType const & result()
+		template <class ResType = std::enable_if_t<!std::is_same_v<RetType, void>, RetType &>>
+		ResType result()
 		{
 			if (!_task_ready)
 			{
-				_task_result = std::move(_task_future.get());
+				if constexpr (!std::is_same_v<RetType, void>)
+				{
+					_task_result = std::move(_task_future.get());
+				}
 				_task_ready = true;
 			}
-			return _task_result;
+			return std::any_cast<ResType>(_task_result);
 		}
 		bool ready()
 		{
-			return _task_ready || (_task_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready
-								   ? (_task_result = std::move(_task_future.get()), _task_ready = true)
-								   : false);
+			if (!_task_ready)
+			{
+				if (_task_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+				{
+					if constexpr (!std::is_same_v<RetType, void>)
+					{
+						_task_result = std::move(_task_future.get());
+					}
+					return _task_ready = true;
+				}
+				return false;
+			}
+			return true;
 		}
 		void wait()
 		{
-			_task_result = std::move(_task_future.get());
-			_task_ready = true;
+			if (!_task_ready)
+			{
+				if constexpr (!std::is_same_v<RetType, void>)
+				{
+					_task_result = std::move(_task_future.get());
+				}
+				_task_ready = true;
+			}
 		}
 		template <class Rep, class Period>
 		std::future_status wait_for(std::chrono::duration<Rep, Period> const & timeout_duration)
 		{
 			auto retval = _task_future.wait_for(timeout_duration);
-			if (retval == std::future_status::ready)
+			if (!_task_ready && retval == std::future_status::ready)
 			{
-				_task_result = std::move(_task_future.get());
+				if constexpr (!std::is_same_v<RetType, void>)
+				{
+					_task_result = std::move(_task_future.get());
+				}
 				_task_ready = true;
 			}
 			return retval;
@@ -66,182 +90,85 @@ namespace stp // C++17 version
 		std::future_status wait_until(std::chrono::time_point<Clock, Duration> const & timeout_time)
 		{
 			auto retval = _task_future.wait_until(timeout_time);
-			if (retval == std::future_status::ready)
+			if (!_task_ready && retval == std::future_status::ready)
 			{
-				_task_result = std::move(_task_future.get());
+				if constexpr (!std::is_same_v<RetType, void>)
+				{
+					_task_result = std::move(_task_future.get());
+				}
 				_task_ready = true;
 			}
 			return retval;
 		}
 
-		task<RetType>() = delete;
-		template <class FuncType, 
-			class = std::enable_if_t<std::is_convertible_v<FuncType, std::function<RetType()>>>>
-		task<RetType>(FuncType & func) :
+		task<RetType, ParamType ...>() = delete;
+		template <class FuncType,
+				  class = std::enable_if_t<std::is_convertible_v<FuncType, std::function<RetType()>> 
+						  && sizeof...(ParamType) == 0>>
+		task<RetType, ParamType ...>(FuncType & func) :
 			_task_package(static_cast<std::function<RetType()>>(func))
 		{
 		}
-		template <class ... ParamType>
-		task<RetType>(RetType(* func)(ParamType ...), ParamType && ... arg) :
-			_task_package(std::bind(func, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ... ArgType,
+				  class = std::enable_if_t<sizeof...(ParamType) != 0>>
+		task<RetType, ParamType ...>(RetType(* func)(ParamType ...), ArgType && ... arg) :
+			_task_package(std::bind(func, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		template <class ObjType, class ... ParamType>
-		task<RetType>(RetType(ObjType::* func)(ParamType ...), ObjType * obj, ParamType && ... arg) :
-			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ObjType, class ... ArgType,
+				  class = std::enable_if_t<sizeof...(ParamType) != 0>>
+		task<RetType, ParamType ...>(RetType(ObjType::* func)(ParamType ...), ObjType * obj, ArgType && ... arg) :
+			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		template <class ... ProtoParamType, class ... ParamType,
-			class = std::enable_if_t<!std::is_same_v<ProtoParamType ..., ParamType ...>>>
-		task<RetType>(RetType(* func)(ProtoParamType ...), ParamType && ... arg) :
-			_task_package(std::bind(func, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ... AutoParamType, class ... ArgType,
+				  class = std::enable_if_t<sizeof...(ParamType) == 0>>
+		task<RetType, ParamType ...>(RetType(* func)(AutoParamType ...), ArgType && ... arg) :
+			_task_package(std::bind(func, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		template <class ObjType, class ... ProtoParamType, class ... ParamType,
-			class = std::enable_if_t<!std::is_same_v<ProtoParamType ..., ParamType ...>>>
-		task<RetType>(RetType(ObjType::* func)(ProtoParamType ...), ObjType * obj, ParamType && ... arg) :
-			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ObjType, class ... AutoParamType, class ... ArgType,
+				  class = std::enable_if_t<sizeof...(ParamType) == 0>>
+		task<RetType, ParamType ...>(RetType(ObjType::* func)(AutoParamType ...), ObjType * obj, ArgType && ... arg) :
+			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		task<RetType>(task<RetType> const &) = delete;
-		task<RetType> & operator=(task<RetType> const &) = delete;
-		task<RetType>(task<RetType> &&) = default;
-		task<RetType> & operator=(task<RetType> &&) = default;
-		~task<RetType>() = default;
+		task<RetType, ParamType ...>(task<RetType, ParamType ...> const &) = delete;
+		task<RetType, ParamType ...> & operator=(task<RetType, ParamType ...> const &) = delete;
+		task<RetType, ParamType ...>(task<RetType, ParamType ...> &&) = default;
+		task<RetType, ParamType ...> & operator=(task<RetType, ParamType ...> &&) = default;
+		~task<RetType, ParamType ...>() = default;
 
-		RetType const & operator()()
+		template <class ResType = std::conditional_t<!std::is_same_v<RetType, void>, RetType &, void>>
+		ResType operator()()
 		{
 			_task_package();
-			_task_result = std::move(_task_future.get());
+			if constexpr (!std::is_same_v<RetType, void>)
+			{
+				_task_result = std::move(_task_future.get());
+			}
 			_task_ready = true;
-			return _task_result;
+			if constexpr (!std::is_same_v<RetType, void>)
+			{
+				return std::any_cast<ResType>(_task_result);
+			}
 		}
 	private:
 		std::packaged_task<RetType()> _task_package;
-		std::unique_ptr<std::function<void()>> _task_function
-		{
-			std::make_unique<std::function<void()>>([this] { _task_package(); })
-		};
-		std::future<RetType> _task_future
-		{
-			_task_package.get_future()
-		};
-		RetType _task_result;
+		std::function<void()> _task_function = [this] { _task_package(); };
+		std::future<RetType> _task_future = _task_package.get_future();
+		std::any _task_result;
 		bool _task_ready = false;
 
-		template <class ParamType, class = std::enable_if_t<std::is_lvalue_reference_v<ParamType>>>
-		constexpr auto _arg_wrapper(ParamType && arg) -> decltype(std::ref(arg))
+		template <class ArgType, class = std::enable_if_t<std::is_lvalue_reference_v<ArgType &&>>>
+		auto _arg_wrapper(ArgType && arg) -> decltype(std::ref(arg))
 		{
 			return std::ref(arg);
 		}
-		template <class ParamType, class = std::enable_if_t<!std::is_lvalue_reference_v<ParamType>>>
-		constexpr auto _arg_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
+		template <class ArgType, class = std::enable_if_t<std::is_rvalue_reference_v<ArgType &&>>>
+		auto _arg_wrapper(ArgType && arg) -> decltype(std::bind(std::move<ArgType &>, std::ref(arg)))
 		{
-			return std::bind(std::move<ParamType &>, arg);
-		}
-
-		friend class threadpool;
-	};
-
-	template <>
-	class task<void>
-	{
-	public:
-		using result_type = void;
-
-		bool ready()
-		{
-			return _task_ready || (_task_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready
-								   ? (_task_ready = true)
-								   : false);
-		}
-		void wait()
-		{
-			_task_future.wait();
-			_task_ready = true;
-		}
-		template <class Rep, class Period>
-		std::future_status wait_for(std::chrono::duration<Rep, Period> const & timeout_duration)
-		{
-			auto retval = _task_future.wait_for(timeout_duration);
-			if (retval == std::future_status::ready)
-			{
-				_task_ready = true;
-			}
-			return retval;
-		}
-		template <class Clock, class Duration>
-		std::future_status wait_until(std::chrono::time_point<Clock, Duration> const & timeout_time)
-		{
-			auto retval = _task_future.wait_until(timeout_time);
-			if (retval == std::future_status::ready)
-			{
-				_task_ready = true;
-			}
-			return retval;
-		}
-
-		task() = delete;
-		template <class FuncType, 
-			class = std::enable_if_t<std::is_convertible_v<FuncType, std::function<void()>>>>
-		task(FuncType & func) :
-			_task_package(static_cast<std::function<void()>>(func))
-		{
-		}
-		template <class ... ParamType>
-		task(void(* func)(ParamType ...), ParamType && ... arg) :
-			_task_package(std::bind(func, _arg_wrapper(std::forward<ParamType>(arg)) ...))
-		{
-		}
-		template <class ObjType, class ... ParamType>
-		task(void(ObjType::* func)(ParamType ...), ObjType * obj, ParamType && ... arg) :
-			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ParamType>(arg)) ...))
-		{
-		}
-		template <class ... ProtoParamType, class ... ParamType,
-			class = std::enable_if_t<!std::is_same_v<ProtoParamType ..., ParamType ...>>>
-		task(void(* func)(ProtoParamType ...), ParamType && ... arg) :
-			_task_package(std::bind(func, _arg_wrapper(std::forward<ParamType>(arg)) ...))
-		{
-		}
-		template <class ObjType, class ... ProtoParamType, class ... ParamType,
-			class = std::enable_if_t<!std::is_same_v<ProtoParamType ..., ParamType ...>>>
-		task(void(ObjType::* func)(ProtoParamType ...), ObjType * obj, ParamType && ... arg) :
-			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ParamType>(arg)) ...))
-		{
-		}
-		task(task const &) = delete;
-		task & operator=(task const &) = delete;
-		task(task &&) = default;
-		task & operator=(task &&) = default;
-		~task() = default;
-
-		void operator()()
-		{
-			_task_package();
-			_task_ready = true;
-		}
-	private:
-		std::packaged_task<void()> _task_package;
-		std::unique_ptr<std::function<void()>> _task_function
-		{
-			std::make_unique<std::function<void()>>([this] { _task_package(); })
-		};
-		std::future<void> _task_future
-		{ 
-			_task_package.get_future()
-		};
-		bool _task_ready = false;
-
-		template <class ParamType, class = std::enable_if_t<std::is_lvalue_reference_v<ParamType>>>
-		constexpr auto _arg_wrapper(ParamType && arg) -> decltype(std::ref(arg))
-		{
-			return std::ref(arg);
-		}
-		template <class ParamType, class = std::enable_if_t<!std::is_lvalue_reference_v<ParamType>>>
-		constexpr auto _arg_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
-		{
-			return std::bind(std::move<ParamType &>, arg);
+			return std::bind(std::move<ArgType &>, std::ref(arg));
 		}
 
 		friend class threadpool;
@@ -255,7 +182,7 @@ namespace stp // C++17 version
 		{
 			std::scoped_lock<std::mutex> lock(_task_queue_mutex);
 
-			_task_queue.emplace(task._task_function.get(), static_cast<_task_priority_t>(priority));
+			_task_queue.emplace(&task._task_function, static_cast<_task_priority_t>(priority));
 
 			if (_threadpool_notify)
 			{
@@ -350,9 +277,11 @@ namespace stp // C++17 version
 							it = it_b;
 
 							_threadpool_condvar.notify_all();
+
 							threadpool_lock.unlock();
 
 							std::this_thread::yield();
+
 							threadpool_lock.lock();
 						}
 						if (!it->_task._function)
@@ -437,7 +366,8 @@ namespace stp // C++17 version
 			_task_priority_t _priority;
 			std::chrono::high_resolution_clock::time_point _age;
 
-			_task_t(std::function<void()> * function = nullptr, _task_priority_t priority = 0) :
+			_task_t(std::function<void()> * function = nullptr,
+					_task_priority_t priority = 0) :
 				_function(function),
 				_priority(priority),
 				_age(std::chrono::high_resolution_clock::now())

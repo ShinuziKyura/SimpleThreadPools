@@ -25,7 +25,7 @@ namespace stp // C++14 version
 		terminating			= 0b0001
 	};
 
-	template <class RetType>
+	template <class RetType, class ... ParamType>
 	class task
 	{
 	public:
@@ -74,40 +74,43 @@ namespace stp // C++14 version
 			return retval;
 		}
 
-		task<RetType>() = delete;
-		template <class FuncType, 
-			class = std::enable_if_t<std::is_convertible<FuncType, std::function<RetType()>>::value>>
-		task<RetType>(FuncType & func) :
+		task<RetType, ParamType ...>() = delete;
+		template <class FuncType,
+			class = std::enable_if_t<std::is_convertible<FuncType, std::function<RetType()>>::value
+									 && std::bool_constant<sizeof...(ParamType) == 0>::value>>
+		task<RetType, ParamType ...>(FuncType & func) :
 			_task_package(static_cast<std::function<RetType()>>(func))
 		{
 		}
-		template <class ... ParamType>
-		task<RetType>(RetType(* func)(ParamType ...), ParamType && ... arg) :
-			_task_package(std::bind(func, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ... ArgType,
+			class = std::enable_if_t<std::bool_constant<sizeof...(ParamType) != 0>::value>>
+		task<RetType, ParamType ...>(RetType(*func)(ParamType ...), ArgType && ... arg) :
+			_task_package(std::bind(func, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		template <class ObjType, class ... ParamType>
-		task<RetType>(RetType(ObjType::* func)(ParamType ...), ObjType * obj, ParamType && ... arg) :
-			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ObjType, class ... ArgType,
+			class = std::enable_if_t<std::bool_constant<sizeof...(ParamType) != 0>::value>>
+		task<RetType, ParamType ...>(RetType(ObjType::* func)(ParamType ...), ObjType * obj, ArgType && ... arg) :
+			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		template <class ... ProtoParamType, class ... ParamType,
-			class = std::enable_if_t<!std::is_same<ProtoParamType ..., ParamType ...>::value>>
-		task<RetType>(RetType(* func)(ProtoParamType ...), ParamType && ... arg) :
-			_task_package(std::bind(func, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ... AutoParamType, class ... ArgType,
+			class = std::enable_if_t<std::bool_constant<sizeof...(ParamType) == 0>::value>>
+		task<RetType, ParamType ...>(RetType(*func)(AutoParamType ...), ArgType && ... arg) :
+			_task_package(std::bind(func, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		template <class ObjType, class ... ProtoParamType, class ... ParamType,
-			class = std::enable_if_t<!std::is_same<ProtoParamType ..., ParamType ...>::value>>
-		task<RetType>(RetType(ObjType::* func)(ProtoParamType ...), ObjType * obj, ParamType && ... arg) :
-			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ObjType, class ... AutoParamType, class ... ArgType,
+			class = std::enable_if_t<std::bool_constant<sizeof...(ParamType) == 0>::value>>
+		task<RetType, ParamType ...>(RetType(ObjType::* func)(AutoParamType ...), ObjType * obj, ArgType && ... arg) :
+			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		task<RetType>(task<RetType> const &) = delete;
-		task<RetType> & operator=(task<RetType> const &) = delete;
-		task<RetType>(task<RetType> &&) = default;
-		task<RetType> & operator=(task<RetType> &&) = default;
-		~task<RetType>() = default;
+		task<RetType, ParamType ...>(task<RetType, ParamType ...> const &) = delete;
+		task<RetType, ParamType ...> & operator=(task<RetType, ParamType ...> const &) = delete;
+		task<RetType, ParamType ...>(task<RetType, ParamType ...> &&) = default;
+		task<RetType, ParamType ...> & operator=(task<RetType, ParamType ...> &&) = default;
+		~task<RetType, ParamType ...>() = default;
 
 		RetType const & operator()()
 		{
@@ -129,22 +132,22 @@ namespace stp // C++14 version
 		RetType _task_result;
 		bool _task_ready = false;
 
-		template <class ParamType, class = std::enable_if_t<std::is_lvalue_reference<ParamType>::value>>
-		constexpr auto _arg_wrapper(ParamType && arg) -> decltype(std::ref(arg))
+		template <class ArgType, class = std::enable_if_t<std::is_lvalue_reference<ArgType &&>::value>>
+		constexpr auto _arg_wrapper(ArgType && arg) -> decltype(std::ref(arg))
 		{
 			return std::ref(arg);
 		}
-		template <class ParamType, class = std::enable_if_t<!std::is_lvalue_reference<ParamType>::value>>
-		constexpr auto _arg_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
+		template <class ArgType, class = std::enable_if_t<std::is_rvalue_reference<ArgType &&>::value>>
+		constexpr auto _arg_wrapper(ArgType && arg) -> decltype(std::bind(std::move<ArgType &>, std::ref(arg)))
 		{
-			return std::bind(std::move<ParamType &>, arg);
+			return std::bind(std::move<ArgType &>, std::ref(arg));
 		}
 
 		friend class threadpool;
 	};
 
-	template <>
-	class task<void>
+	template <class ... ParamType>
+	class task<void, ParamType ...>
 	{
 	public:
 		using result_type = void;
@@ -181,40 +184,43 @@ namespace stp // C++14 version
 			return retval;
 		}
 
-		task() = delete;
-		template <class FuncType, 
-			class = std::enable_if_t<std::is_convertible<FuncType, std::function<void()>>::value>>
-		task(FuncType & func) :
+		task<void, ParamType ...>() = delete;
+		template <class FuncType,
+			class = std::enable_if_t<std::is_convertible<FuncType, std::function<void()>>::value
+									 && std::bool_constant<sizeof...(ParamType) == 0>::value>>
+		task<void, ParamType ...>(FuncType & func) :
 			_task_package(static_cast<std::function<void()>>(func))
 		{
 		}
-		template <class ... ParamType>
-		task(void(* func)(ParamType ...), ParamType && ... arg) :
-			_task_package(std::bind(func, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ... ArgType,
+			class = std::enable_if_t<std::bool_constant<sizeof...(ParamType) != 0>::value>>
+		task<void, ParamType ...>(void(*func)(ParamType ...), ArgType && ... arg) :
+			_task_package(std::bind(func, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		template <class ObjType, class ... ParamType>
-		task(void(ObjType::* func)(ParamType ...), ObjType * obj, ParamType && ... arg) :
-			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ObjType, class ... ArgType,
+			class = std::enable_if_t<std::bool_constant<sizeof...(ParamType) != 0>::value>>
+		task<void, ParamType ...>(void(ObjType::* func)(ParamType ...), ObjType * obj, ArgType && ... arg) :
+			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		template <class ... ProtoParamType, class ... ParamType,
-			class = std::enable_if_t<!std::is_same<ProtoParamType ..., ParamType ...>::value>>
-		task(void(* func)(ProtoParamType ...), ParamType && ... arg) :
-			_task_package(std::bind(func, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ... AutoParamType, class ... ArgType,
+			class = std::enable_if_t<std::bool_constant<sizeof...(ParamType) == 0>::value>>
+		task<void, ParamType ...>(void(*func)(AutoParamType ...), ArgType && ... arg) :
+			_task_package(std::bind(func, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		template <class ObjType, class ... ProtoParamType, class ... ParamType,
-			class = std::enable_if_t<!std::is_same<ProtoParamType ..., ParamType ...>::value>>
-		task(void(ObjType::* func)(ProtoParamType ...), ObjType * obj, ParamType && ... arg) :
-			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ParamType>(arg)) ...))
+		template <class ObjType, class ... AutoParamType, class ... ArgType,
+			class = std::enable_if_t<std::bool_constant<sizeof...(ParamType) == 0>::value>>
+		task<void, ParamType ...>(void(ObjType::* func)(AutoParamType ...), ObjType * obj, ArgType && ... arg) :
+			_task_package(std::bind(func, obj, _arg_wrapper(std::forward<ArgType>(arg)) ...))
 		{
 		}
-		task(task const &) = delete;
-		task & operator=(task const &) = delete;
-		task(task &&) = default;
-		task & operator=(task &&) = default;
-		~task() = default;
+		task<void, ParamType ...>(task<void, ParamType ...> const &) = delete;
+		task<void, ParamType ...> & operator=(task<void, ParamType ...> const &) = delete;
+		task<void, ParamType ...>(task<void, ParamType ...> &&) = default;
+		task<void, ParamType ...> & operator=(task<void, ParamType ...> &&) = default;
+		~task<void, ParamType ...>() = default;
 
 		void operator()()
 		{
@@ -233,15 +239,15 @@ namespace stp // C++14 version
 		};
 		bool _task_ready = false;
 
-		template <class ParamType, class = std::enable_if_t<std::is_lvalue_reference<ParamType>::value>>
-		constexpr auto _arg_wrapper(ParamType && arg) -> decltype(std::ref(arg))
+		template <class ArgType, class = std::enable_if_t<std::is_lvalue_reference<ArgType &&>::value>>
+		constexpr auto _arg_wrapper(ArgType && arg) -> decltype(std::ref(arg))
 		{
 			return std::ref(arg);
 		}
-		template <class ParamType, class = std::enable_if_t<!std::is_lvalue_reference<ParamType>::value>>
-		constexpr auto _arg_wrapper(ParamType && arg) -> decltype(std::bind(std::move<ParamType &>, arg))
+		template <class ArgType, class = std::enable_if_t<std::is_rvalue_reference<ArgType &&>::value>>
+		constexpr auto _arg_wrapper(ArgType && arg) -> decltype(std::bind(std::move<ArgType &>, std::ref(arg)))
 		{
-			return std::bind(std::move<ParamType &>, arg);
+			return std::bind(std::move<ArgType &>, std::ref(arg));
 		}
 
 		friend class threadpool;

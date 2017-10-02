@@ -7,11 +7,11 @@
 #include <algorithm>
 #include <random>
 
-constexpr auto		OUTPUT_TO_FILE		= false;
+constexpr bool		OUTPUT_TO_FILE		= false;
 using				ARRAY_TYPE			= unsigned long long;
-const auto			ARRAY_SIZE			= 1000000;
-const auto			ARRAY_AMOUNT		= 16;
-const auto			THREAD_AMOUNT		= std::thread::hardware_concurrency();
+const size_t		ARRAY_SIZE			= 1000000;
+const size_t		ARRAY_AMOUNT		= 16;
+const size_t		THREAD_AMOUNT		= std::thread::hardware_concurrency();
 
 template <class IntType>
 class random_number_generator
@@ -124,9 +124,7 @@ void test()
 
 	std::cout <<
 		"\n\t\tAverage time elapsed per array:\n\t\t" <<
-		sum_result / ARRAY_AMOUNT << " ns/array\n\n" <<
-		"\t\tTotal time elapsed:\n\t\t" <<
-		sum_result << " ns\n\n";
+		sum_result / ARRAY_AMOUNT << " ns/array\n\n";
 
 	stop_test = std::chrono::high_resolution_clock::now();
 }
