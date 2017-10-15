@@ -1,4 +1,4 @@
-#include "../cpp17/stp.hpp"
+#include "stp.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -19,11 +19,6 @@ class random_number_generator
 public:
 	IntType gen()
 	{
-		return numbers_(engine_);
-	}
-	IntType par_gen()
-	{
-		std::lock_guard<std::mutex> lock(mutex_);
 		return numbers_(engine_);
 	}
 
@@ -53,54 +48,56 @@ private:
 				  std::is_same<IntType, unsigned int>::value ||
 				  std::is_same<IntType, unsigned long>::value ||
 				  std::is_same<IntType, unsigned long long>::value,
-				  "ARRAY_TYPE must be one of \'short\', \'int\', \'long\', \'long long\', "
+				  "IntType must be one of \'short\', \'int\', \'long\', \'long long\', "
 				  "\'unsigned short\', \'unsigned int\', \'unsigned long\', or \'unsigned long long\'.");
 };
 
-				std::chrono::time_point<std::chrono::high_resolution_clock> start_test, stop_test;
-thread_local	std::chrono::time_point<std::chrono::high_resolution_clock> start_timer, stop_timer;
+				std::chrono::time_point<std::chrono::steady_clock> start_test, stop_test;
+thread_local	std::chrono::time_point<std::chrono::steady_clock> start_timer, stop_timer;
+
+thread_local	random_number_generator	<ARRAY_TYPE> rng;
 
 template <class ArrayType, size_t ArraySize>
-long double generator(random_number_generator<ArrayType> & rng, std::array<ArrayType, ArraySize> & arr)
+long double generator(std::array<ArrayType, ArraySize> & arr)
 {
-	start_timer = std::chrono::high_resolution_clock::now();
-	std::generate(std::begin(arr), std::end(arr), std::bind(&random_number_generator<ArrayType>::par_gen, &rng));
-	stop_timer = std::chrono::high_resolution_clock::now();
+	start_timer = std::chrono::steady_clock::now();
+	std::generate(std::begin(arr), std::end(arr), std::bind(&random_number_generator<ArrayType>::gen, &rng));
+	stop_timer = std::chrono::steady_clock::now();
 	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
 }
 
 template <class ArrayType, size_t ArraySize>
 long double sorter(std::array<ArrayType, ArraySize> & arr)
 {
-	start_timer = std::chrono::high_resolution_clock::now();
+	start_timer = std::chrono::steady_clock::now();
 	std::sort(std::begin(arr), std::end(arr));
-	stop_timer = std::chrono::high_resolution_clock::now();
+	stop_timer = std::chrono::steady_clock::now();
 	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
 }
 
 void test()
 {
-	random_number_generator	<ARRAY_TYPE> rng;
-	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arr;
-	std::generate(std::begin(arr), std::end(arr), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
-
 	stp::threadpool threadpool(THREAD_AMOUNT, false);
+	
 	std::vector<stp::task<long double>> tasks;
-	tasks.reserve(16);
+	tasks.reserve(ARRAY_AMOUNT);
 
-	start_test = std::chrono::high_resolution_clock::now();
+	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
+	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
 
 	// Array generation
-
+	
 	std::cout << 
 		"\tArray generation begin...\n\n"
 		"\t\tThreadpool size: " << threadpool.size() << "\n\n";
 
-	for (auto & a : arr)
+	for (auto & array : arrays)
 	{
-		tasks.emplace_back(generator<ARRAY_TYPE, ARRAY_SIZE>, rng, *a);
+		tasks.emplace_back(generator<ARRAY_TYPE, ARRAY_SIZE>, *array);
 		threadpool.new_task(tasks.back());
 	}
+
+	start_test = std::chrono::steady_clock::now();
 
 	threadpool.notify_threads();
 	
@@ -108,25 +105,25 @@ void test()
 	{
 		std::this_thread::yield();
 	}
-	while (std::all_of(std::begin(tasks), std::end(tasks),
+	while (!std::all_of(std::begin(tasks), std::end(tasks),
 		   [] (stp::task<long double> & task) { return task.ready(); }));
+
+	stop_test = std::chrono::steady_clock::now();
 	
 	std::cout <<
 		"\tArray generation end\n\n"
 		"\t\tTime elapsed per array:\n";
 
 	long double sum_result = 0.0;
-	for (auto & t : tasks)
+	for (auto & task : tasks)
 	{
-		sum_result += t.result();
-		std::cout << "\t\t" << t.result() << " ns\n";
+		sum_result += task.result();
+		std::cout << "\t\t" << task.result() << " ns\n";
 	}
 
 	std::cout <<
 		"\n\t\tAverage time elapsed per array:\n\t\t" <<
 		sum_result / ARRAY_AMOUNT << " ns/array\n\n";
-
-	stop_test = std::chrono::high_resolution_clock::now();
 }
 
 int main()
