@@ -8,7 +8,7 @@
 #include <queue>
 
 // SimpleThreadPools
-// C++14 version (Not Working!)
+// C++14 version (WIP)
 namespace stp
 {
 	enum class task_errc
@@ -244,31 +244,49 @@ namespace stp
 	private:
 		struct _any_t
 		{
+			struct _any_type_t
+			{
+				virtual ~_any_type_t()
+				{
+				}
+			};
+
+			template <class ValueType>
+			struct _type_t : _any_type_t
+			{
+				_type_t(ValueType && value) : 
+					_value(value)
+				{
+				}
+				~_type_t() = default;
+
+				ValueType _value;
+			};
+
 			_any_t & operator=(_any_t && any)
 			{
-				// Todo
+				_any_value = std::move(any._any_value);
 				return *this;
 			}
 			template <class ValueType>
 			_any_t & operator=(ValueType && value)
 			{
-				// Todo
+				_any_value.reset(new _type_t<ValueType>(std::forward<ValueType>(value)));
 				return *this;
 			}
 
-			/* ValueType */// _value; // Todo
+			std::unique_ptr<_any_type_t> _any_value{ nullptr };
 
 			void reset()
 			{
-				// Todo
+				_any_value.reset(nullptr);
 			}
 		};
 
 		template <class ValueType>
 		ValueType _any_cast(_any_t & any)
 		{
-			// Todo
-			return ValueType();
+			return static_cast<_any_t::_type_t<ValueType> *>(any._any_value.get())->_value;
 		}
 
 		std::packaged_task<RetType()> _task_package;
