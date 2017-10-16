@@ -2,7 +2,7 @@
 
 #include <iostream>
 #include <fstream>
-#include <chrono>
+#include <thread>
 #include <array>
 #include <algorithm>
 #include <random>
@@ -25,7 +25,8 @@ public:
 	random_number_generator<IntType>() :
 		random_data_(),
 		random_device_(),
-		random_generator_((std::generate(std::begin(random_data_), std::end(random_data_), std::ref(random_device_)), nullptr)),
+		random_generator_((std::generate(std::begin(random_data_), std::end(random_data_), std::ref(random_device_)),
+						   nullptr)),
 		seeds_(std::begin(random_data_), std::end(random_data_)),
 		engine_(seeds_),
 		numbers_(std::numeric_limits<IntType>::min(), std::numeric_limits<IntType>::max())
@@ -38,7 +39,6 @@ private:
 	std::seed_seq seeds_;
 	std::mt19937 engine_;
 	std::uniform_int_distribution<IntType> numbers_;
-	std::mutex mutex_;
 
 	static_assert(std::is_same<IntType, short>::value ||
 				  std::is_same<IntType, int>::value ||
@@ -52,10 +52,9 @@ private:
 				  "\'unsigned short\', \'unsigned int\', \'unsigned long\', or \'unsigned long long\'.");
 };
 
-				std::chrono::time_point<std::chrono::steady_clock> start_test, stop_test;
-thread_local	std::chrono::time_point<std::chrono::steady_clock> start_timer, stop_timer;
-
 thread_local	random_number_generator	<ARRAY_TYPE> rng;
+				std::chrono::steady_clock::time_point start_test, stop_test;
+thread_local	std::chrono::steady_clock::time_point start_timer, stop_timer;
 
 template <class ArrayType, size_t ArraySize>
 long double generator(std::array<ArrayType, ArraySize> & arr)
@@ -90,7 +89,7 @@ void test()
 	std::cout << 
 		"\tArray generation begin...\n\n"
 		"\t\tThreadpool size: " << threadpool.size() << "\n\n";
-
+	
 	for (auto & array : arrays)
 	{
 		tasks.emplace_back(generator<ARRAY_TYPE, ARRAY_SIZE>, *array);
@@ -138,7 +137,7 @@ int main()
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
 
-	test();
+	test(); // The testbed is not yet complete
 
 #if (OUTPUT_TO_FILE) // This may need adjusting
 	std::cout << std::flush;
@@ -152,4 +151,6 @@ int main()
 		std::chrono::duration<long double>(stop_test - start_test).count() << " s\n\n"
 		"Press enter to exit..." << std::endl;
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+	return 0;
 }
