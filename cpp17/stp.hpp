@@ -14,7 +14,8 @@ namespace stp
 {
 	enum class task_errc
 	{
-		state_would_be_lost = 1
+		race_condition		= 1,
+		thread_deadlock		= 2
 	};
 
 	enum class task_priority : uint8_t
@@ -53,8 +54,10 @@ namespace stp
 		{
 			switch (errc)
 			{
-				case task_errc::state_would_be_lost:
-					return std::string("state would be lost");
+				case task_errc::race_condition:
+					return std::string("race condition");
+				case task_errc::thread_deadlock:
+					return std::string("thread deadlock");
 			}
 			return std::string();
 		}
@@ -88,20 +91,26 @@ namespace stp
 		template <class = std::enable_if_t<!std::is_same_v<RetType, void>>>
 		RetType result()
 		{
+			if (_task_state == task_state::suspended)
+			{
+				throw task_error(task_errc::thread_deadlock);
+			}
+
 			if (_task_state == task_state::running || _task_state == task_state::waiting)
 			{
 				_task_future.wait();
 
 				while (_task_state != task_state::ready);
 			}
-			if (_task_state == task_state::suspended)
-			{
-				_task_shared_function();
-			}
 			return std::any_cast<RetType>(_task_result);
 		}
 		void wait()
 		{
+			if (_task_state == task_state::suspended)
+			{
+				throw task_error(task_errc::thread_deadlock);
+			}
+
 			if (_task_state == task_state::running || _task_state == task_state::waiting)
 			{
 				_task_future.wait();
@@ -156,7 +165,7 @@ namespace stp
 		{
 			if (_task_state == task_state::running || _task_state == task_state::waiting)
 			{
-				throw task_error(task_errc::state_would_be_lost);
+				throw task_error(task_errc::race_condition);
 			}
 
 			_task_package.reset();
@@ -206,14 +215,14 @@ namespace stp
 		{
 			if (task._task_state == task_state::running || task._task_state == task_state::waiting)
 			{
-				throw task_error(task_errc::state_would_be_lost);
+				throw task_error(task_errc::race_condition);
 			}
 
 			_task_package = std::move(task._task_package);
 			_task_future = std::move(task._task_future);
 			_task_shared_future = std::move(task._task_shared_future);
 			_task_result = std::move(task._task_result);
-			_task_state = static_cast<task_state>(task._task_state);
+			task._task_state == task_state::ready ? _task_state = task_state::ready, void() : void();
 			_task_priority = task._task_priority;
 		}
 		template <class ... OldParamTypes>
@@ -221,14 +230,14 @@ namespace stp
 		{
 			if (task._task_state == task_state::running || task._task_state == task_state::waiting)
 			{
-				throw task_error(task_errc::state_would_be_lost);
+				throw task_error(task_errc::race_condition);
 			}
 
 			_task_package = std::move(task._task_package);
 			_task_future = std::move(task._task_future);
 			_task_shared_future = std::move(task._task_shared_future);
 			_task_result = std::move(task._task_result);
-			_task_state = static_cast<task_state>(task._task_state);
+			task._task_state == task_state::ready ? _task_state = task_state::ready, void() : void();
 			_task_priority = task._task_priority;
 			return *this;
 		}
@@ -236,7 +245,12 @@ namespace stp
 
 		RetType operator()()
 		{
-			_task_shared_function();
+			if (_task_state == task_state::running || _task_state == task_state::waiting)
+			{
+				throw task_error(task_errc::race_condition);
+			}
+
+			_task_function();
 			if constexpr (!std::is_same_v<RetType, void>)
 			{
 				return std::any_cast<RetType>(_task_result);
@@ -392,7 +406,7 @@ namespace stp
 					std::scoped_lock<std::shared_mutex> threadpool_lock(_threadpool_mutex);
 
 					auto it_b = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end(), it = it_b;
-					for (uintmax_t n = 0; n < threadpool_diff; ++it == it_e ? (it = it_b, void()) : void())
+					for (uintmax_t n = 0; n < threadpool_diff; ++it == it_e ? it = it_b, void() : void())
 					{
 						if (it->_running && it->_sleeping)
 						{
