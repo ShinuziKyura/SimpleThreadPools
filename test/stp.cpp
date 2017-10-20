@@ -2,7 +2,7 @@
 
 #include <iostream>
 #include <fstream>
-#include <thread>
+#include <string>
 #include <array>
 #include <algorithm>
 #include <random>
@@ -52,7 +52,7 @@ private:
 				  "\'unsigned short\', \'unsigned int\', \'unsigned long\', or \'unsigned long long\'.");
 };
 
-thread_local	random_number_generator	<ARRAY_TYPE> rng;
+thread_local	random_number_generator<ARRAY_TYPE> rng;
 				std::chrono::steady_clock::time_point start_test, stop_test;
 thread_local	std::chrono::steady_clock::time_point start_timer, stop_timer;
 
@@ -74,55 +74,86 @@ long double sorter(std::array<ArrayType, ArraySize> & arr)
 	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
 }
 
+std::string threadpool_state_to_string(stp::threadpool_state state)
+{
+	switch (state)
+	{
+		case stp::threadpool_state::running:
+			return std::string("running");
+		case stp::threadpool_state::stopped:
+			return std::string("stopped");
+		case stp::threadpool_state::terminating:
+			return std::string("terminating");
+	}
+	return std::string();
+}
+
 void test()
 {
 	stp::threadpool threadpool(THREAD_AMOUNT, false);
-	
+
 	std::vector<stp::task<long double>> tasks;
 	tasks.reserve(ARRAY_AMOUNT);
 
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
 
-	// Array generation
-	
-	std::cout << 
-		"\tArray generation begin...\n\n"
-		"\t\tThreadpool size: " << threadpool.size() << "\n\n";
-	
-	for (auto & array : arrays)
-	{
-		tasks.emplace_back(generator<ARRAY_TYPE, ARRAY_SIZE>, *array);
-		threadpool.new_task(tasks.back());
-	}
-
-	start_test = std::chrono::steady_clock::now();
-
-	threadpool.notify_threads();
-	
-	do
-	{
-		std::this_thread::yield();
-	}
-	while (!std::all_of(std::begin(tasks), std::end(tasks),
-		   [] (stp::task<long double> & task) { return task.ready(); }));
-
-	stop_test = std::chrono::steady_clock::now();
-	
 	std::cout <<
-		"\tArray generation end\n\n"
-		"\t\tTime elapsed per array:\n";
+		"\tThreadpool size: " << threadpool.size() << "\n"
+		"\tThreadpool notifications: " << (threadpool.notify() ? "active" : "inactive") << "\n"
+		"\tThreadpool state: " << threadpool_state_to_string(threadpool.state()) << "\n\n";
 
-	long double sum_result = 0.0;
-	for (auto & task : tasks)
-	{
-		sum_result += task.result();
-		std::cout << "\t\t" << task.result() << " ns\n";
+	{	// Array generation
+		std::cout <<
+			"\tArray generation begin...\n\n";
+
+		for (auto & array : arrays)
+		{
+			tasks.emplace_back(generator<ARRAY_TYPE, ARRAY_SIZE>, *array);
+			threadpool.new_task(tasks.back());
+		}
+
+		start_test = std::chrono::steady_clock::now();
+
+		threadpool.notify_threads();
+
+		while (!std::all_of(std::begin(tasks), std::end(tasks),
+							[] (stp::task<long double> & task) { return task.ready(); }))
+		{
+			std::this_thread::yield();
+		}
+
+		stop_test = std::chrono::steady_clock::now();
+
+		std::cout <<
+			"\t\tTime elapsed per array:\n";
+
+		long double sum_result = 0.0;
+		for (auto & task : tasks)
+		{
+			sum_result += task.result();
+			std::cout << "\t\t" << task.result() << " ns\n";
+		}
+
+		std::cout <<
+			"\n\t\tAverage time elapsed per array:\n\t\t" <<
+			sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\tArray generation end\n\n";
 	}
 
-	std::cout <<
-		"\n\t\tAverage time elapsed per array:\n\t\t" <<
-		sum_result / ARRAY_AMOUNT << " ns/array\n\n";
+	tasks.resize(0);
+
+/*	{	// Array sorting
+		std::cout <<
+			"\tArray sorting begin...\n\n"
+			"\t\tFirst four arrays\n";
+
+		for (auto & array : arrays)
+		{
+			tasks.emplace_back(sorter<ARRAY_TYPE, ARRAY_SIZE>, *array);
+			threadpool.new_task(tasks.back());
+		}
+	} //*/
 }
 
 int main()
