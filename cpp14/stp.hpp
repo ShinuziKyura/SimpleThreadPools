@@ -7,8 +7,7 @@
 #include <list>
 #include <queue>
 
-// SimpleThreadPools
-// C++14 version
+// SimpleThreadPools - C++14 version
 namespace stp
 {
 	enum class task_errc
@@ -87,12 +86,12 @@ namespace stp
 	public:
 		using result_type = RetType;
 
-		template <class = std::enable_if_t<!std::is_same<RetType, void>::value>>
+//		template <class = std::enable_if_t<!std::is_same<RetType, void>::value>>
 		RetType result()
 		{
 			wait();
 
-			return _task_result;
+			return *_task_result;
 		}
 		void wait()
 		{
@@ -160,32 +159,28 @@ namespace stp
 		}
 
 		task<RetType, ParamTypes ...>() = default;
-		template <class ... AutoParamTypes, class ... ArgTypes,
-				  class = std::enable_if_t<sizeof...(ParamTypes) == 0>>
+		template <class ... AutoParamTypes, class ... ArgTypes>
 		task<RetType, ParamTypes ...>(RetType(* func)(AutoParamTypes ...), ArgTypes && ... args) :
 			_task_package(std::bind(func, _bind_forward(std::forward<ArgTypes>(args)) ...)),
 			_task_future(std::move(_task_package.get_future())),
 			_task_future_condition(_task_future)
 		{
 		}
-		template <class ObjType, class ... AutoParamTypes, class ... ArgTypes,
-				  class = std::enable_if_t<sizeof...(ParamTypes) == 0>>
+		template <class ObjType, class ... AutoParamTypes, class ... ArgTypes>
 		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(AutoParamTypes ...), ObjType * obj, ArgTypes && ... args) :
 			_task_package(std::bind(func, obj, _bind_forward(std::forward<ArgTypes>(args)) ...)),
 			_task_future(std::move(_task_package.get_future())),
 			_task_future_condition(_task_future)
 		{
 		}
-		template <class ... ArgTypes,
-				  class = std::enable_if_t<sizeof...(ParamTypes) != 0>>
+		template <class ... ArgTypes>
 		task<RetType, ParamTypes ...>(RetType(* func)(ParamTypes ...), ArgTypes && ... args) :
 			_task_package(std::bind(func, _bind_forward(std::forward<ArgTypes>(args)) ...)),
 			_task_future(std::move(_task_package.get_future())),
 			_task_future_condition(_task_future)
 		{
 		}
-		template <class ObjType, class ... ArgTypes,
-				  class = std::enable_if_t<sizeof...(ParamTypes) != 0>>
+		template <class ObjType, class ... ArgTypes>
 		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) :
 			_task_package(std::bind(func, obj, _bind_forward(std::forward<ArgTypes>(args)) ...)),
 			_task_future(std::move(_task_package.get_future())),
@@ -194,8 +189,8 @@ namespace stp
 		}
 		task<RetType, ParamTypes ...>(task<RetType, ParamTypes ...> const &) = delete;
 		task<RetType, ParamTypes ...> & operator=(task<RetType, ParamTypes ...> const &) = delete;
-		template <class ... OldParamTypes>
-		task<RetType, ParamTypes ...>(task<RetType, OldParamTypes ...> && task) // Pseudo-move constructor
+		template <class ... MoveParamTypes>
+		task<RetType, ParamTypes ...>(task<RetType, MoveParamTypes ...> && task) // Pseudo-move constructor
 		{
 			if (task._task_state == task_state::running || task._task_state == task_state::waiting)
 			{
@@ -209,8 +204,8 @@ namespace stp
 			task._task_state == task_state::ready ? _task_state = task_state::ready, void() : void();
 			_task_priority = task._task_priority;
 		}
-		template <class ... OldParamTypes>
-		task<RetType, ParamTypes ...> & operator=(task<RetType, OldParamTypes ...> && task) // Pseudo-move assignment operator
+		template <class ... MoveParamTypes>
+		task<RetType, ParamTypes ...> & operator=(task<RetType, MoveParamTypes ...> && task) // Pseudo-move assignment operator
 		{
 			if (task._task_state == task_state::running || task._task_state == task_state::waiting)
 			{
@@ -235,37 +230,33 @@ namespace stp
 			}
 
 			_task_function();
-			return _result<RetType>();
+			return _result(std::is_same<RetType, void>());
 		}
 	private:
 		std::packaged_task<RetType()> _task_package;
 		std::shared_future<RetType> _task_future;
 		std::shared_future<RetType> _task_future_condition;
-		RetType _task_result;
+		std::shared_ptr<RetType> _task_result;
 		std::atomic<task_state> _task_state{ task_state::suspended };
 		task_priority _task_priority{ task_priority_default() };
-		std::function<void()> _task_function{ std::bind(&task<RetType, ParamTypes ...>::_function<RetType>, this) };
+		std::function<void()> _task_function{ std::bind(static_cast<void(task<RetType, ParamTypes ...>::*)(typename std::is_same<RetType, void>::type)>(&task<RetType, ParamTypes ...>::_function), this, std::is_same<RetType, void>()) }; // Jesus fucking Christ...
 		
-		template <class>
-		void _function()
+		void _function(std::false_type)
 		{
 			_task_package();
-			_task_result = std::move(_task_future.get());
+			_task_result = std::move(std::make_shared<RetType>(std::move(_task_future.get())));
 			_task_state = task_state::ready;
 		}
-		template <>
-		void _function<void>() // Alternative to if constexpr in _function()
+		void _function(std::true_type) // Alternative to if constexpr in _function()
 		{
 			_task_package();
 			_task_state = task_state::ready;
 		}
-		template <class>
-		RetType _result()
+		RetType _result(std::false_type)
 		{
-			return _task_result;
+			return *_task_result;
 		}
-		template <>
-		RetType _result<void>() // Alternative to if constexpr in operator()()
+		RetType _result(std::true_type) // Alternative to if constexpr in operator()()
 		{
 		}
 		template <class ArgType>

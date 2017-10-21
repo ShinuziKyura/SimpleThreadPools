@@ -1,4 +1,4 @@
-#include "stp.hpp"
+#include "../cpp17/stp.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -52,9 +52,9 @@ private:
 				  "\'unsigned short\', \'unsigned int\', \'unsigned long\', or \'unsigned long long\'.");
 };
 
-thread_local	random_number_generator<ARRAY_TYPE> rng;
-				std::chrono::steady_clock::time_point start_test, stop_test;
-thread_local	std::chrono::steady_clock::time_point start_timer, stop_timer;
+thread_local		random_number_generator<ARRAY_TYPE>	rng;
+					std::chrono::steady_clock::time_point start_test, stop_test;
+thread_local		std::chrono::steady_clock::time_point start_timer, stop_timer;
 
 template <class ArrayType, size_t ArraySize>
 long double generator(std::array<ArrayType, ArraySize> & arr)
@@ -142,8 +142,8 @@ void test()
 	}
 
 	tasks.resize(0);
-
-/*	{	// Array sorting
+	
+/*/{//	Array sorting
 		std::cout <<
 			"\tArray sorting begin...\n\n"
 			"\t\tFirst four arrays\n";
@@ -153,7 +153,7 @@ void test()
 			tasks.emplace_back(sorter<ARRAY_TYPE, ARRAY_SIZE>, *array);
 			threadpool.new_task(tasks.back());
 		}
-	} //*/
+	}//*/
 }
 
 int main()
