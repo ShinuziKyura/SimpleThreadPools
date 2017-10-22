@@ -242,7 +242,7 @@ namespace stp
 		std::shared_ptr<RetType> _task_result;
 		std::atomic<task_state> _task_state{ task_state::suspended };
 		task_priority _task_priority{ task_priority_default() };
-		std::function<void()> _task_function{ std::bind(&task<RetType, ParamTypes ...>::_function, this) };
+		std::function<void()> _task_function{ [this] { _function(); } };
 
 		void _function()
 		{

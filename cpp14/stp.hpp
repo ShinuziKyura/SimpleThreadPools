@@ -86,7 +86,7 @@ namespace stp
 	public:
 		using result_type = RetType;
 
-//		template <class = std::enable_if_t<!std::is_same<RetType, void>::value>>
+		template <class = std::enable_if_t<!std::is_same<RetType, void>::value>>
 		RetType result()
 		{
 			wait();
@@ -239,7 +239,7 @@ namespace stp
 		std::shared_ptr<RetType> _task_result;
 		std::atomic<task_state> _task_state{ task_state::suspended };
 		task_priority _task_priority{ task_priority_default() };
-		std::function<void()> _task_function{ std::bind(static_cast<void(task<RetType, ParamTypes ...>::*)(typename std::is_same<RetType, void>::type)>(&task<RetType, ParamTypes ...>::_function), this, std::is_same<RetType, void>()) }; // Jesus fucking Christ...
+		std::function<void()> _task_function{ [this] { _function(std::is_same<RetType, void>()); } };
 		
 		void _function(std::false_type)
 		{
@@ -270,7 +270,7 @@ namespace stp
 			return std::bind(std::move<ArgType &>, std::ref(arg));
 		}
 
-		template <class RetType, class ... OldParamTypes> friend class task; // Required by pseudo-move constructor and assignment operator
+		template <class MoveRetType, class ... MoveParamTypes> friend class task; // Required by pseudo-move constructor and assignment operator
 		friend class threadpool;
 	};
 
