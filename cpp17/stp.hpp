@@ -285,7 +285,7 @@ namespace stp
 		template <class RetType, class ... ParamTypes>
 		void new_task(task<RetType, ParamTypes ...> & task, task_priority priority = task_priority::null)
 		{
-			std::scoped_lock<std::mutex> lock(_threadpool_task_queue_mutex);
+			std::scoped_lock<std::mutex> lock1(_threadpool_task_queue_mutex);
 
 			task._task_state = task_state::waiting;
 			_threadpool_task_queue.emplace(&task._task_function,
@@ -296,21 +296,20 @@ namespace stp
 
 			if (_threadpool_notify)
 			{
-				std::scoped_lock<std::shared_mutex> lock(_threadpool_mutex);
+				std::scoped_lock<std::shared_mutex> lock2(_threadpool_mutex);
 
-				++_threadpool_tasks;
-				_threadpool_priority = _threadpool_task_queue.top()._priority;
+				_threadpool_task_priority = _threadpool_task_queue.top()._priority;
 
 				_threadpool_condvar.notify_one();
 			}
 		}
 		void clear_tasks()
 		{
-			std::scoped_lock<std::shared_mutex, std::mutex> lock(_threadpool_mutex, _threadpool_task_queue_mutex);
+			std::scoped_lock<std::mutex, std::shared_mutex> lock(_threadpool_task_queue_mutex, _threadpool_mutex);
 
 			for (auto & thread : _threadpool_thread_list)
 			{
-				if (thread._sleeping)
+				if (!thread._working)
 				{
 					*(thread._task._state) = task_state::suspended;
 					thread._task._function = nullptr;
@@ -325,29 +324,32 @@ namespace stp
 				_threadpool_task_queue.pop();
 			}
 
-			_threadpool_tasks = 0;
-			_threadpool_priority = 0;
+			_threadpool_task_priority = 0;
 		}
-		void notify_threads(bool threadpool_notify)
+		size_t number_tasks()
 		{
-			if ((_threadpool_notify = threadpool_notify))
+			std::scoped_lock<std::mutex> lock(_threadpool_task_queue_mutex);
+
+			return _threadpool_task_queue.size();
+		}
+		void notify_threads(bool notify)
+		{
+			if ((_threadpool_notify = notify))
 			{
 				notify_threads();
 			}
 			else
 			{
-				std::scoped_lock<std::shared_mutex, std::mutex> lock(_threadpool_mutex, _threadpool_task_queue_mutex);
+				std::scoped_lock<std::mutex, std::shared_mutex> lock(_threadpool_task_queue_mutex, _threadpool_mutex);
 
-				_threadpool_tasks = 0;
-				_threadpool_priority = 0;
+				_threadpool_task_priority = 0;
 			}
 		}
 		void notify_threads()
 		{
-			std::scoped_lock<std::shared_mutex, std::mutex> lock(_threadpool_mutex, _threadpool_task_queue_mutex);
+			std::scoped_lock<std::mutex, std::shared_mutex> lock(_threadpool_task_queue_mutex, _threadpool_mutex);
 
-			_threadpool_tasks = _threadpool_task_queue.size();
-			_threadpool_priority = _threadpool_task_queue.top()._priority;
+			_threadpool_task_priority = _threadpool_task_queue.top()._priority;
 
 			_threadpool_condvar.notify_all();
 		}
@@ -371,16 +373,16 @@ namespace stp
 				_threadpool_state = threadpool_state::stopped;
 			}
 		}
-		void resize(size_t threadpool_size)
+		void resize(size_t new_size)
 		{
-			if (_threadpool_size != threadpool_size)
+			if (_threadpool_size != new_size)
 			{
-				std::scoped_lock<std::mutex> lock(_threadpool_thread_list_mutex);
+				std::scoped_lock<std::mutex> lock1(_threadpool_thread_list_mutex);
 
 				uintmax_t threadpool_diff = std::abs(static_cast<intmax_t>(_threadpool_size)
-													 - static_cast<intmax_t>(threadpool_size));
+													 - static_cast<intmax_t>(new_size));
 
-				if (_threadpool_size < threadpool_size)
+				if (_threadpool_size < new_size)
 				{
 					for (uintmax_t n = 0; n < threadpool_diff; ++n)
 					{
@@ -389,14 +391,14 @@ namespace stp
 				}
 				else
 				{
-					std::scoped_lock<std::shared_mutex> threadpool_lock(_threadpool_mutex);
+					std::scoped_lock<std::shared_mutex> lock2(_threadpool_mutex);
 
 					auto it_b = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end(), it = it_b;
 					for (uintmax_t n = 0; n < threadpool_diff; ++it == it_e ? it = it_b, void() : void())
 					{
-						if (it->_running && it->_sleeping)
+						if (it->_active && !it->_working)
 						{
-							it->_running = false;
+							it->_active = false;
 
 							if (it->_task._function)
 							{
@@ -410,7 +412,7 @@ namespace stp
 					_threadpool_condvar.notify_all();
 				}
 
-				_threadpool_size = threadpool_size;
+				_threadpool_size = new_size;
 			}
 		}
 		size_t size() const
@@ -442,7 +444,7 @@ namespace stp
 		threadpool & operator=(threadpool const &) = delete;
 		threadpool(threadpool &&) = delete;
 		threadpool & operator=(threadpool &&) = delete;
-		~threadpool()
+		~threadpool() noexcept
 		{
 			_threadpool_mutex.lock();
 
@@ -456,7 +458,7 @@ namespace stp
 			{
 				std::this_thread::yield();
 			}
-			while (_threadpool_threads);
+			while (_threadpool_active_threads);
 		}
 	private:
 		struct _task_t
@@ -484,8 +486,8 @@ namespace stp
 		struct _thread_t
 		{
 			_task_t _task;
-			std::atomic<bool> _running{ true };
-			std::atomic<bool> _sleeping{ false };
+			std::atomic<bool> _active{ true };
+			std::atomic<bool> _working{ true };
 			std::thread _thread; // Must be last variable to be initialized
 
 			_thread_t(threadpool * threadpool) :
@@ -497,9 +499,8 @@ namespace stp
 		size_t _threadpool_size;
 		bool _threadpool_notify;
 		std::atomic<threadpool_state> _threadpool_state;
-		std::atomic<uint8_t> _threadpool_priority{ 0 };
-		std::atomic<size_t> _threadpool_threads{ 0 };
-		std::atomic<size_t> _threadpool_tasks{ 0 };
+		std::atomic<uint8_t> _threadpool_task_priority{ 0 };
+		std::atomic<size_t> _threadpool_active_threads{ 0 };
 		std::list<_thread_t> _threadpool_thread_list;
 		std::priority_queue<_task_t, std::deque<_task_t>>_threadpool_task_queue;
 		std::mutex _threadpool_thread_list_mutex;
@@ -509,63 +510,60 @@ namespace stp
 
 		void _thread_pool(_thread_t * this_thread)
 		{
-			++_threadpool_threads;
+			++_threadpool_active_threads;
 
 			std::shared_lock<std::shared_mutex> threadpool_lock(_threadpool_mutex, std::defer_lock);
 
-			while (_threadpool_state != threadpool_state::terminating && this_thread->_running)
+			while (_threadpool_state != threadpool_state::terminating && this_thread->_active)
 			{
-				this_thread->_sleeping = true;
+				this_thread->_working = false;
 
 				threadpool_lock.lock();
 
-				while (_threadpool_state != threadpool_state::terminating && this_thread->_running
-					   && ((!_threadpool_tasks && !this_thread->_task._function)
-						   || (!_threadpool_tasks && _threadpool_state == threadpool_state::stopped)
-						   || (_threadpool_priority <= this_thread->_task._priority
+				while (_threadpool_state != threadpool_state::terminating && this_thread->_active
+					   && ((!_threadpool_task_priority && !this_thread->_task._function)
+						   || (!_threadpool_task_priority && _threadpool_state == threadpool_state::stopped)
+						   || (_threadpool_task_priority <= this_thread->_task._priority
 							   && this_thread->_task._function 
 							   && _threadpool_state == threadpool_state::stopped)))
 				{
 					_threadpool_condvar.wait(threadpool_lock);
 				}
 
-				this_thread->_sleeping = false;
+				this_thread->_working = true;
 
 				threadpool_lock.unlock();
 
-				if (this_thread->_running)
+				if (this_thread->_active)
 				{
 					switch (_threadpool_state)
 					{
 						case threadpool_state::running:
 						case threadpool_state::stopped:
-							if ((!this_thread->_task._function && _threadpool_tasks)
-								|| _threadpool_priority > this_thread->_task._priority)
+							if (!this_thread->_task._function || _threadpool_task_priority > this_thread->_task._priority)
 							{
 								std::scoped_lock<std::mutex> lock(_threadpool_task_queue_mutex);
 
 								if (!this_thread->_task._function)
 								{
-									if (_threadpool_tasks)
+									if (_threadpool_task_priority)
 									{
-										--_threadpool_tasks;
-
 										this_thread->_task = _threadpool_task_queue.top();
 										_threadpool_task_queue.pop();
 
-										_threadpool_priority = (!_threadpool_task_queue.empty()
+										_threadpool_task_priority = (!_threadpool_task_queue.empty()
 																	 ? _threadpool_task_queue.top()._priority
 																	 : 0);
 									}
 								}
-								else if (_threadpool_priority > this_thread->_task._priority)
+								else if (_threadpool_task_priority > this_thread->_task._priority)
 								{
 									_threadpool_task_queue.push(this_thread->_task);
 
 									this_thread->_task = _threadpool_task_queue.top();
 									_threadpool_task_queue.pop();
 
-									_threadpool_priority = (!_threadpool_task_queue.empty()
+									_threadpool_task_priority = (!_threadpool_task_queue.empty()
 																 ? _threadpool_task_queue.top()._priority
 																 : 0);
 								}
@@ -599,7 +597,7 @@ namespace stp
 			it->_thread.detach();
 			_threadpool_thread_list.erase(it);
 
-			--_threadpool_threads;
+			--_threadpool_active_threads;
 		}
 	};
 }

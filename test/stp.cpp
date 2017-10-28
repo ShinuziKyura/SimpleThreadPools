@@ -7,11 +7,12 @@
 #include <algorithm>
 #include <random>
 
-constexpr bool		OUTPUT_TO_FILE		= false;
-using				ARRAY_TYPE			= unsigned long long;
-const size_t		ARRAY_SIZE			= 1000000;
-const size_t		ARRAY_AMOUNT		= 16;
-const size_t		THREAD_AMOUNT		= std::thread::hardware_concurrency();
+#define	OUTPUT_TO_FILE 0
+
+using				ARRAY_TYPE			= uint64_t;
+size_t const		ARRAY_SIZE			= 1000000;
+size_t const		ARRAY_AMOUNT		= 16; // Must be multiple of 4
+size_t const		THREAD_AMOUNT		= std::thread::hardware_concurrency();
 
 template <class IntType>
 class random_number_generator
@@ -57,19 +58,19 @@ thread_local		random_number_generator<ARRAY_TYPE>	rng;
 thread_local		std::chrono::steady_clock::time_point start_timer, stop_timer;
 
 template <class ArrayType, size_t ArraySize>
-long double generator(std::array<ArrayType, ArraySize> & arr)
+long double generator(std::array<ArrayType, ArraySize> & array)
 {
 	start_timer = std::chrono::steady_clock::now();
-	std::generate(std::begin(arr), std::end(arr), std::bind(&random_number_generator<ArrayType>::gen, &rng));
+	std::generate(std::begin(array), std::end(array), std::bind(&random_number_generator<ArrayType>::gen, &rng));
 	stop_timer = std::chrono::steady_clock::now();
 	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
 }
 
 template <class ArrayType, size_t ArraySize>
-long double sorter(std::array<ArrayType, ArraySize> & arr)
+long double sorter(std::array<ArrayType, ArraySize> & array)
 {
 	start_timer = std::chrono::steady_clock::now();
-	std::sort(std::begin(arr), std::end(arr));
+	std::sort(std::begin(array), std::end(array));
 	stop_timer = std::chrono::steady_clock::now();
 	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
 }
@@ -103,7 +104,7 @@ void test()
 		"\tThreadpool notifications: " << (threadpool.notify() ? "active" : "inactive") << "\n"
 		"\tThreadpool state: " << threadpool_state_to_string(threadpool.state()) << "\n\n";
 
-	{	// Array generation
+	{// Array generation
 		std::cout <<
 			"\tArray generation begin...\n\n";
 
@@ -142,17 +143,18 @@ void test()
 	}
 
 	tasks.resize(0);
-	
+
 /*/{//	Array sorting
 		std::cout <<
 			"\tArray sorting begin...\n\n"
 			"\t\tFirst four arrays\n";
 
-		for (auto & array : arrays)
+		for (size_t index = 0; index < ARRAY_AMOUNT / 4; ++index)
 		{
-			tasks.emplace_back(sorter<ARRAY_TYPE, ARRAY_SIZE>, *array);
+			tasks.emplace_back(sorter<ARRAY_TYPE, ARRAY_SIZE>, *arrays[index]);
 			threadpool.new_task(tasks.back());
 		}
+
 	}//*/
 }
 
@@ -168,7 +170,7 @@ int main()
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
 
-	test(); // The testbed is not yet complete
+	test(); // Not yet complete
 
 #if (OUTPUT_TO_FILE) // This may need adjusting
 	std::cout << std::flush;
