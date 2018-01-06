@@ -11,8 +11,37 @@
 
 using				ARRAY_TYPE			= uint64_t;
 size_t const		ARRAY_SIZE			= 1000000;
-size_t const		ARRAY_AMOUNT		= 16; // Must be multiple of 4
+size_t const		ARRAY_AMOUNT		= 16; // Must be a multiple of and greater than 4
 size_t const		THREAD_AMOUNT		= std::thread::hardware_concurrency();
+
+namespace util
+{
+	std::string signal_to_string(bool signals)
+	{
+		switch (signals)
+		{
+			case true:
+				return std::string("active");
+			case false:
+				return std::string("inactive");
+		}
+		return std::string();
+	}
+
+	std::string state_to_string(stp::threadpool_state state)
+	{
+		switch (state)
+		{
+			case stp::threadpool_state::running:
+				return std::string("running");
+			case stp::threadpool_state::stopped:
+				return std::string("stopped");
+			case stp::threadpool_state::terminating:
+				return std::string("terminating");
+		}
+		return std::string();
+	}
+}
 
 template <class IntType>
 class random_number_generator
@@ -75,23 +104,9 @@ long double sorter(std::array<ArrayType, ArraySize> & array)
 	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
 }
 
-std::string threadpool_state_to_string(stp::threadpool_state state)
+long double test()
 {
-	switch (state)
-	{
-		case stp::threadpool_state::running:
-			return std::string("running");
-		case stp::threadpool_state::stopped:
-			return std::string("stopped");
-		case stp::threadpool_state::terminating:
-			return std::string("terminating");
-	}
-	return std::string();
-}
-
-void test()
-{
-	stp::threadpool threadpool(THREAD_AMOUNT, false);
+	stp::threadpool threadpool;
 
 	std::vector<stp::task<long double>> tasks;
 	tasks.reserve(ARRAY_AMOUNT);
@@ -99,24 +114,29 @@ void test()
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
 
+	long double total_time = 0;
 	std::cout <<
 		"\tThreadpool size: " << threadpool.size() << "\n"
-		"\tThreadpool notifications: " << (threadpool.notify() ? "active" : "inactive") << "\n"
-		"\tThreadpool state: " << threadpool_state_to_string(threadpool.state()) << "\n\n";
+		"\tThreadpool signals: " << util::signal_to_string(threadpool.signals()) << "\n"
+		"\tThreadpool state: " << util::state_to_string(threadpool.state()) << "\n\n";
 
-	{// Array generation
+//	Array generation
+
+	{
 		std::cout <<
 			"\tArray generation begin...\n\n";
 
 		for (auto & array : arrays)
 		{
 			tasks.emplace_back(generator<ARRAY_TYPE, ARRAY_SIZE>, *array);
-			threadpool.new_task(tasks.back());
 		}
 
 		start_test = std::chrono::steady_clock::now();
 
-		threadpool.notify_threads();
+		for (auto & task : tasks)
+		{
+			threadpool.new_task(task);
+		}
 
 		while (!std::all_of(std::begin(tasks), std::end(tasks),
 							[] (stp::task<long double> & task) { return task.ready(); }))
@@ -137,25 +157,62 @@ void test()
 		}
 
 		std::cout <<
-			"\n\t\tAverage time elapsed per array:\n\t\t" <<
-			sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\n\t\tAverage time elapsed per array:\n"
+			"\t\t" << sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\tTotal time elapsed:\n"
+			"\t" << std::chrono::duration<long double>(stop_test - start_test).count() << "s\n\n"
 			"\tArray generation end\n\n";
 	}
 
+	total_time += std::chrono::duration<long double>(stop_test - start_test).count();
 	tasks.resize(0);
 
-/*/{//	Array sorting
-		std::cout <<
-			"\tArray sorting begin...\n\n"
-			"\t\tFirst four arrays\n";
+//	Array sorting
 
-		for (size_t index = 0; index < ARRAY_AMOUNT / 4; ++index)
+	{
+		std::cout <<
+			"\tArray sorting begin...\n\n";
+
+		for (auto & array : arrays)
 		{
-			tasks.emplace_back(sorter<ARRAY_TYPE, ARRAY_SIZE>, *arrays[index]);
-			threadpool.new_task(tasks.back());
+			tasks.emplace_back(sorter<ARRAY_TYPE, ARRAY_SIZE>, *array);
 		}
 
-	}//*/
+		start_test = std::chrono::steady_clock::now();
+
+		for (auto & task : tasks)
+		{
+			threadpool.new_task(task);
+		}
+
+		while (!std::all_of(std::begin(tasks), std::end(tasks),
+							[] (stp::task<long double> & task) { return task.ready(); }))
+		{
+			std::this_thread::yield();
+		}
+
+		stop_test = std::chrono::steady_clock::now();
+
+		std::cout <<
+			"\t\tTime elapsed per array:\n";
+
+		long double sum_result = 0.0;
+		for (auto & task : tasks)
+		{
+			sum_result += task.result();
+			std::cout << "\t\t" << task.result() << " ns\n";
+		}
+
+		std::cout <<
+			"\n\t\tAverage time elapsed per array:\n"
+			"\t\t" << sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\tTotal time elapsed:\n"
+			"\t" << std::chrono::duration<long double>(stop_test - start_test).count() << "s\n\n"
+			"\tArray sorting end\n\n";
+	}
+
+	total_time += std::chrono::duration<long double>(stop_test - start_test).count();
+	return total_time;
 }
 
 int main()
@@ -170,7 +227,7 @@ int main()
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
 
-	test(); // Not yet complete
+	long double total_time = test(); // Not yet complete
 
 #if (OUTPUT_TO_FILE) // This may need adjusting
 	std::cout << std::flush;
@@ -179,9 +236,10 @@ int main()
 #endif
 
 	std::cout << 
+		"Total time elapsed:\n" <<
+		total_time << " s\n\n"
 		"Test end\n\n"
-		"\tTotal time elapsed:\n\t" << 
-		std::chrono::duration<long double>(stop_test - start_test).count() << " s\n\n"
+		"======================\n\n"
 		"Press enter to exit..." << std::endl;
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 

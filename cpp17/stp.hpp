@@ -67,7 +67,10 @@ namespace stp
 		task_priority_default() = default;
 		task_priority_default(task_priority value)
 		{
-			value != task_priority::null ? _value = value, void() : void();
+			if (value != task_priority::null)
+			{
+				_value = value;
+			}
 		}
 
 		operator task_priority()
@@ -142,7 +145,10 @@ namespace stp
 		}
 		void priority(task_priority priority)
 		{
-			priority != task_priority::null ? _task_priority = priority, void() : void();
+			if (priority != task_priority::null)
+			{
+				_task_priority = priority;
+			}
 		}
 		void reset()
 		{
@@ -201,7 +207,7 @@ namespace stp
 			_task_future = std::move(task._task_future);
 			_task_future_condition = std::move(task._task_future_condition);
 			_task_result = std::move(task._task_result);
-			task._task_state == task_state::ready ? _task_state = task_state::ready, void() : void();
+			_task_state = static_cast<task_state>(task._task_state);
 			_task_priority = task._task_priority;
 		}
 		template <class ... MoveParamTypes>
@@ -216,7 +222,7 @@ namespace stp
 			_task_future = std::move(task._task_future);
 			_task_future_condition = std::move(task._task_future_condition);
 			_task_result = std::move(task._task_result);
-			task._task_state == task_state::ready ? _task_state = task_state::ready, void() : void();
+			_task_state = static_cast<task_state>(task._task_state);
 			_task_priority = task._task_priority;
 			return *this;
 		}
@@ -254,12 +260,12 @@ namespace stp
 			_task_state = task_state::ready;
 		}
 		template <class ArgType>
-		static auto _bind_forward(ArgType & arg) -> decltype(std::ref(arg))
+		static auto _bind_forward(ArgType & arg)
 		{
 			return std::ref(arg);
 		}
 		template <class ArgType>
-		static auto _bind_forward(ArgType && arg) -> decltype(std::bind(std::move<ArgType &>, std::ref(arg)))
+		static auto _bind_forward(ArgType && arg)
 		{
 			return std::bind(std::move<ArgType &>, std::ref(arg));
 		}
@@ -294,13 +300,13 @@ namespace stp
 																? priority
 																: task._task_priority));
 
-			if (_threadpool_notify)
+			if (_threadpool_signals)
 			{
 				std::scoped_lock<std::shared_mutex> lock2(_threadpool_mutex);
 
 				_threadpool_task_priority = _threadpool_task_queue.top()._priority;
 
-				_threadpool_condvar.notify_one();
+				_threadpool_condition_variable.notify_one();
 			}
 		}
 		void clear_tasks()
@@ -332,26 +338,18 @@ namespace stp
 
 			return _threadpool_task_queue.size();
 		}
-		void notify_threads(bool notify)
+		void signal_tasks()
 		{
-			if ((_threadpool_notify = notify))
+			std::scoped_lock<std::mutex> lock1(_threadpool_task_queue_mutex);
+
+			if (!_threadpool_task_queue.empty())
 			{
-				notify_threads();
+				std::scoped_lock<std::shared_mutex> lock2(_threadpool_mutex);
+
+				_threadpool_task_priority = _threadpool_task_queue.top()._priority;
+
+				_threadpool_condition_variable.notify_all();
 			}
-			else
-			{
-				std::scoped_lock<std::mutex, std::shared_mutex> lock(_threadpool_task_queue_mutex, _threadpool_mutex);
-
-				_threadpool_task_priority = 0;
-			}
-		}
-		void notify_threads()
-		{
-			std::scoped_lock<std::mutex, std::shared_mutex> lock(_threadpool_task_queue_mutex, _threadpool_mutex);
-
-			_threadpool_task_priority = _threadpool_task_queue.top()._priority;
-
-			_threadpool_condvar.notify_all();
 		}
 		void run()
 		{
@@ -361,7 +359,7 @@ namespace stp
 
 				_threadpool_state = threadpool_state::running;
 
-				_threadpool_condvar.notify_all();
+				_threadpool_condition_variable.notify_all();
 			}
 		}
 		void stop()
@@ -379,12 +377,11 @@ namespace stp
 			{
 				std::scoped_lock<std::mutex> lock1(_threadpool_thread_list_mutex);
 
-				uintmax_t threadpool_diff = std::abs(static_cast<intmax_t>(_threadpool_size)
-													 - static_cast<intmax_t>(new_size));
+				uintmax_t amount = std::abs(static_cast<intmax_t>(_threadpool_size) - static_cast<intmax_t>(new_size));
 
 				if (_threadpool_size < new_size)
 				{
-					for (uintmax_t n = 0; n < threadpool_diff; ++n)
+					for (uintmax_t n = 0; n < amount; ++n)
 					{
 						_threadpool_thread_list.emplace_back(this);
 					}
@@ -394,7 +391,7 @@ namespace stp
 					std::scoped_lock<std::shared_mutex> lock2(_threadpool_mutex);
 
 					auto it_b = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end(), it = it_b;
-					for (uintmax_t n = 0; n < threadpool_diff; ++it == it_e ? it = it_b, void() : void())
+					for (uintmax_t n = 0; n < amount; ++it == it_e ? it = it_b, void() : void())
 					{
 						if (it->_active && !it->_working)
 						{
@@ -409,7 +406,7 @@ namespace stp
 						}
 					}
 
-					_threadpool_condvar.notify_all();
+					_threadpool_condition_variable.notify_all();
 				}
 
 				_threadpool_size = new_size;
@@ -419,9 +416,22 @@ namespace stp
 		{
 			return _threadpool_size;
 		}
-		bool notify() const
+		bool signals() const
 		{
-			return _threadpool_notify;
+			return _threadpool_signals;
+		}
+		void signals(bool signal)
+		{
+			if ((_threadpool_signals = signal) == true)
+			{
+				signal_tasks();
+			}
+			else
+			{
+				std::scoped_lock<std::mutex, std::shared_mutex> lock(_threadpool_task_queue_mutex, _threadpool_mutex);
+
+				_threadpool_task_priority = 0;
+			}
 		}
 		threadpool_state state() const
 		{
@@ -429,10 +439,10 @@ namespace stp
 		}
 
 		threadpool(size_t size = std::thread::hardware_concurrency(),
-				   bool notify = true,
+				   bool signals = true,
 				   threadpool_state state = threadpool_state::running) :
 			_threadpool_size(size),
-			_threadpool_notify(notify),
+			_threadpool_signals(signals),
 			_threadpool_state(state)
 		{
 			for (size_t n = 0; n < _threadpool_size; ++n)
@@ -450,7 +460,7 @@ namespace stp
 
 			_threadpool_state = threadpool_state::terminating;
 
-			_threadpool_condvar.notify_all();
+			_threadpool_condition_variable.notify_all();
 
 			_threadpool_mutex.unlock();
 
@@ -497,7 +507,7 @@ namespace stp
 		};
 
 		size_t _threadpool_size;
-		bool _threadpool_notify;
+		bool _threadpool_signals;
 		std::atomic<threadpool_state> _threadpool_state;
 		std::atomic<uint8_t> _threadpool_task_priority{ 0 };
 		std::atomic<size_t> _threadpool_active_threads{ 0 };
@@ -506,7 +516,7 @@ namespace stp
 		std::mutex _threadpool_thread_list_mutex;
 		std::mutex _threadpool_task_queue_mutex;
 		std::shared_mutex _threadpool_mutex;
-		std::condition_variable_any _threadpool_condvar;
+		std::condition_variable_any _threadpool_condition_variable;
 
 		void _thread_pool(_thread_t * this_thread)
 		{
@@ -527,7 +537,7 @@ namespace stp
 							   && this_thread->_task._function 
 							   && _threadpool_state == threadpool_state::stopped)))
 				{
-					_threadpool_condvar.wait(threadpool_lock);
+					_threadpool_condition_variable.wait(threadpool_lock);
 				}
 
 				this_thread->_working = true;
