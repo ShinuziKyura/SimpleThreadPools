@@ -48,7 +48,7 @@ namespace stp
 		maximum				= 5,
 		high				= 4,
 		normal				= 3,
-		low					= 2,
+		low 				= 2,
 		minimum				= 1
 	};
 
