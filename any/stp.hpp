@@ -284,7 +284,7 @@ namespace stp
 		}
 
 		template <class ArgType>
-		static decltype(auto) _bind_forward(std::remove_reference_t<ArgType> & arg)
+		static auto _bind_forward(std::remove_reference_t<ArgType> & arg)
 		{
 			if constexpr (std::is_lvalue_reference_v<ArgType>)
 			{
