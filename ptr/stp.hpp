@@ -81,10 +81,7 @@ namespace stp
 		using type = task<RetType>;
 		using value_type = RetType;
 
-		template <class Type = std::conditional_t<std::is_same<RetType, void>::value,
-												  void,
-												  std::add_lvalue_reference_t<RetType>>>
-		Type get()
+		std::add_lvalue_reference_t<RetType> get()
 		{
 			wait();
 
@@ -95,15 +92,7 @@ namespace stp
 				std::rethrow_exception(_task_exception);
 			}
 
-			return _if_constexpr(std::is_same<RetType, void>(), 
-			[]
-			{
-				return;
-			}, 
-			[&] () -> decltype(auto)
-			{
-				return *_task_result;
-			});
+			return _if_constexpr_get(std::bool_constant<!std::is_same<RetType, void>::value>());
 		}
 		void wait()
 		{
@@ -121,15 +110,7 @@ namespace stp
 			{
 				try
 				{
-					_if_constexpr(std::is_same<RetType, void>(), 
-					[&]
-					{
-						_task_future.get();
-					}, 
-					[&]
-					{
-						_task_result = std::make_unique<RetType>(std::move(_task_future.get()));
-					});
+					_if_constexpr_wait(std::is_same<RetType, void>());
 				}
 				catch (...)
 				{
@@ -297,29 +278,38 @@ namespace stp
 			}
 		}
 
+		std::add_lvalue_reference_t<RetType> _if_constexpr_get(std::true_type)
+		{
+			return *_task_result;
+		}
+		void _if_constexpr_get(std::false_type)
+		{
+		}
+
+		void _if_constexpr_wait(std::true_type)
+		{
+			_task_future.get();
+		}
+		void _if_constexpr_wait(std::false_type)
+		{
+			_task_result = std::make_unique<RetType>(std::move(_task_future.get()));
+		}
+
 		template <class ArgType>
 		static auto _bind_forward(std::remove_reference_t<ArgType> & arg)
 		{
-			return _if_constexpr(std::is_lvalue_reference<ArgType>(),
-			[&] () -> decltype(auto)
-			{
-				return std::ref(arg);
-			},
-			[&] () -> decltype(auto)
-			{
-				return std::bind(std::move<ArgType &>, std::ref(arg));
-			});
+			return _if_constexpr_bind_forward<ArgType>(std::is_lvalue_reference<ArgType>(), arg);
 		}
 
-		template <class Type1, class Type2>
-		static decltype(auto) _if_constexpr(std::true_type, Type1 f, Type2)
+		template <class ArgType>
+		static auto _if_constexpr_bind_forward(std::true_type, std::remove_reference_t<ArgType> & arg)
 		{
-			return f();
+			return std::ref(arg);
 		}
-		template <class Type1, class Type2>
-		static decltype(auto) _if_constexpr(std::false_type, Type1, Type2 f)
+		template <class ArgType>
+		static auto _if_constexpr_bind_forward(std::false_type, std::remove_reference_t<ArgType> & arg)
 		{
-			return f();
+			return std::bind(std::move<ArgType &>, std::ref(arg));
 		}
 
 		template <class MoveRetType, class ... MoveParamTypes> friend class task; // Required by pseudo-move constructor and pseudo-move assignment operator

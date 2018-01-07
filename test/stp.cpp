@@ -207,7 +207,7 @@ long double test()
 		{
 			std::this_thread::yield();
 		}
-
+		
 		stop_timer = std::chrono::steady_clock::now();
 
 		std::cout <<

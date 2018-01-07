@@ -66,15 +66,11 @@ namespace stp
 	template <class RetType, class ... ParamTypes>
 	class task
 	{
-		static_assert(std::negation_v<std::is_same<RetType, std::any>>, "RetType may not be std::any");
 	public:
 		using type = task<RetType>;
 		using value_type = RetType;
 
-		template <class Type = std::conditional_t<std::is_same_v<RetType, void>,
-												  void,
-												  std::add_lvalue_reference_t<RetType>>>
-		Type get()
+		std::add_lvalue_reference_t<RetType> get()
 		{
 			wait();
 
@@ -87,7 +83,7 @@ namespace stp
 
 			if constexpr (std::negation_v<std::is_same<RetType, void>>)
 			{
-				return std::any_cast<Type>(_task_result);
+				return std::any_cast<std::add_lvalue_reference_t<RetType>>(_task_result);
 			}
 		}
 		void wait()
@@ -259,6 +255,8 @@ namespace stp
 			_task_function(task_state::running);
 		}
 	private:
+		static_assert(std::negation_v<std::is_same<RetType, std::any>>, "RetType may not be std::any");
+
 		struct _exception_ptr
 		{
 			std::exception_ptr exception_ptr;
@@ -286,7 +284,7 @@ namespace stp
 		}
 
 		template <class ArgType>
-		static auto _bind_forward(std::remove_reference_t<ArgType> & arg)
+		static decltype(auto) _bind_forward(std::remove_reference_t<ArgType> & arg)
 		{
 			if constexpr (std::is_lvalue_reference_v<ArgType>)
 			{
