@@ -7,7 +7,7 @@
 #include <list>
 #include <queue>
 
-// SimpleThreadPools - version B.3.7.0 - Always allocates objects inside stp::tasks dynamically
+// SimpleThreadPools - version B.3.7.1 - Always allocates objects inside stp::tasks dynamically
 namespace stp
 {
 	enum class task_error_code
@@ -47,7 +47,7 @@ namespace stp
 		maximum				= 5,
 		high				= 4,
 		normal				= 3,
-		low					= 2,
+		low 				= 2,
 		minimum				= 1
 	};
 
