@@ -8,7 +8,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.7.0 - Only allocates big objects inside stp::tasks dynamically
+// SimpleThreadPools - version B.3.7.1 - Only allocates big objects inside stp::tasks dynamically
 namespace stp
 {
 	enum class task_error_code
