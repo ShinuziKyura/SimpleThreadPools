@@ -1,16 +1,17 @@
 #ifndef SIMPLE_THREAD_POOLS_HPP
 #define SIMPLE_THREAD_POOLS_HPP
 
-#include <future>
-#include <functional>
-#include <shared_mutex>
 #include <list>
 #include <queue>
+#include <unordered_set>
+#include <functional>
+#include <future>
+#include <shared_mutex>
 
-// SimpleThreadPools - version B.3.7.1 - Always allocates objects inside stp::tasks dynamically
+// SimpleThreadPools - version B.3.9.0 - Always allocates objects inside stp::task objects dynamically
 namespace stp
 {
-	enum class task_error_code
+	enum class task_error_code : uint_fast8_t
 	{
 		no_state = 1,
 		invalid_state,
@@ -25,47 +26,25 @@ namespace stp
 		{
 		}
 	private:
-		static std::string _task_error_code_to_string(task_error_code code)
+		static char const * _task_error_code_to_string(task_error_code code)
 		{
 			switch (code)
 			{
 				case task_error_code::no_state:
-					return std::string("no state");
+					return "no state";
 				case task_error_code::invalid_state:
-					return std::string("invalid state");
+					return "invalid state";
 				case task_error_code::state_loss_would_occur:
-					return std::string("state loss would occur");
+					return "state loss would occur";
 				case task_error_code::thread_deadlock_would_occur:
-					return std::string("thread deadlock would occur");
+					return "thread deadlock would occur";
 			}
-			return std::string();
+
+			return "";
 		}
 	};
 
-	enum class task_priority : uint_fast8_t
-	{
-		maximum				= 5,
-		high				= 4,
-		normal				= 3,
-		low 				= 2,
-		minimum				= 1
-	};
-
-	template <class = void> // [Note: Use stp::default_priority -end note]
-	struct _default_priority
-	{
-		static task_priority default_priority;
-
-		_default_priority() = delete;
-		~_default_priority() = delete;
-	};
-
-	template <>
-	task_priority _default_priority<>::default_priority{ task_priority::normal };
-
-	#define default_priority _default_priority<>::default_priority // No inline variables pre-C++17
-
-	enum class task_state
+	enum class task_state : uint_fast8_t
 	{
 		ready,
 		running,
@@ -77,9 +56,89 @@ namespace stp
 	template <class RetType, class ... ParamTypes>
 	class task
 	{
+		static_assert(!std::is_rvalue_reference<RetType>::value, "stp::task<T>: T may not be of rvalue-reference type");
+		using ResultType = std::conditional_t<!std::is_reference<RetType>::value, RetType, std::decay_t<RetType> *>;
 	public:
-		using type = task<RetType>;
-		using value_type = RetType;
+		task<RetType, ParamTypes ...>() = default;
+		template <class ... AutoParamTypes, class ... ArgTypes>
+		task<RetType, ParamTypes ...>(RetType(* func)(AutoParamTypes ...), ArgTypes && ... args) :
+			_task_package(std::bind(func, _bind_forward<ArgTypes>(args) ...)),
+			_task_future(_task_package.get_future()),
+			_task_state(task_state::suspended)
+		{
+		}
+		template <class ObjType, class ... AutoParamTypes, class ... ArgTypes>
+		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(AutoParamTypes ...), ObjType * obj, ArgTypes && ... args) :
+			_task_package(std::bind(func, obj, _bind_forward<ArgTypes>(args) ...)),
+			_task_future(_task_package.get_future()),
+			_task_state(task_state::suspended)
+		{
+		}
+		template <class ... ArgTypes>
+		task<RetType, ParamTypes ...>(RetType(* func)(ParamTypes ...), ArgTypes && ... args) :
+			_task_package(std::bind(func, _bind_forward<ArgTypes>(args) ...)),
+			_task_future(_task_package.get_future()),
+			_task_state(task_state::suspended)
+		{
+		}
+		template <class ObjType, class ... ArgTypes>
+		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) :
+			_task_package(std::bind(func, obj, _bind_forward<ArgTypes>(args) ...)),
+			_task_future(_task_package.get_future()),
+			_task_state(task_state::suspended)
+		{
+		}
+		template <class ... MoveParamTypes>
+		task<RetType, ParamTypes ...>(task<RetType, MoveParamTypes ...> && other) // Move pseudo-constructor
+		{
+			switch (_task_state.load(std::memory_order_acquire))
+			{
+				case task_state::waiting:
+				case task_state::running:
+					throw task_error(task_error_code::state_loss_would_occur);
+				default:
+					break;
+			}
+
+			_task_package = std::move(other._task_package);
+			_task_future = std::move(other._task_future);
+			_task_result = std::move(other._task_result);
+			_task_exception = std::move(other._task_exception);
+			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed),
+							  std::memory_order_relaxed);
+		}
+		template <class ... MoveParamTypes>
+		task<RetType, ParamTypes ...> & operator=(task<RetType, MoveParamTypes ...> && other) // Move assignment pseudo-operator
+		{
+			switch (_task_state.load(std::memory_order_acquire))
+			{
+				case task_state::waiting:
+				case task_state::running:
+					throw task_error(task_error_code::state_loss_would_occur);
+				default:
+					break;
+			}
+
+			_task_package = std::exchange(other._task_package, std::packaged_task<RetType()>());
+			_task_future = std::exchange(other._task_future, std::future<RetType>());
+			_task_result = std::exchange(other._task_result, std::shared_ptr<ResultType>());
+			_task_exception = std::exchange(other._task_exception, std::exception_ptr());
+			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed),
+							  std::memory_order_relaxed);
+
+			return *this;
+		}
+		~task<RetType, ParamTypes ...>()
+		{
+			switch (_task_state.load(std::memory_order_acquire))
+			{
+				case task_state::waiting:
+				case task_state::running:
+					_task_future.wait();
+				default:
+					break;
+			}
+		}
 
 		std::add_lvalue_reference_t<RetType> get()
 		{
@@ -92,7 +151,7 @@ namespace stp
 				std::rethrow_exception(_task_exception);
 			}
 
-			return _if_constexpr_get(std::bool_constant<!std::is_same<RetType, void>::value>());
+			return _if_constexpr_1_get(std::integral_constant<bool, !std::is_same<RetType, void>::value>());
 		}
 		void wait()
 		{
@@ -110,7 +169,7 @@ namespace stp
 			{
 				try
 				{
-					_if_constexpr_wait(std::is_same<RetType, void>());
+					_if_constexpr_1_wait(std::integral_constant<bool, !std::is_same<RetType, void>::value>());
 				}
 				catch (...)
 				{
@@ -147,6 +206,10 @@ namespace stp
 		{
 			return _task_state.load(std::memory_order_acquire);
 		}
+		bool ready() const
+		{
+			return _task_state.load(std::memory_order_acquire) == task_state::ready;
+		}
 		void reset()
 		{
 			switch (_task_state.load(std::memory_order_acquire))
@@ -158,91 +221,15 @@ namespace stp
 					break;
 			}
 
-			if (_task_object.valid())
+			if (_task_package.valid())
 			{
-				_task_object.reset();
-				_task_future = _task_object.get_future();
+				_task_package.reset();
+				_task_future = _task_package.get_future();
 				_task_result.reset();
 				_task_exception = nullptr;
 				_task_state.store(task_state::suspended, std::memory_order_relaxed);
 			}
 		}
-
-		task<RetType, ParamTypes ...>() :
-			_task_state(task_state::null)
-		{
-		}
-		template <class ... AutoParamTypes, class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(* func)(AutoParamTypes ...), ArgTypes && ... args) :
-			_task_object(std::bind(func, _bind_forward<ArgTypes>(args) ...)),
-			_task_future(_task_object.get_future())
-		{
-		}
-		template <class ObjType, class ... AutoParamTypes, class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(AutoParamTypes ...), ObjType * obj, ArgTypes && ... args) :
-			_task_object(std::bind(func, obj, _bind_forward<ArgTypes>(args) ...)),
-			_task_future(_task_object.get_future())
-		{
-		}
-		template <class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(* func)(ParamTypes ...), ArgTypes && ... args) :
-			_task_object(std::bind(func, _bind_forward<ArgTypes>(args) ...)),
-			_task_future(_task_object.get_future())
-		{
-		}
-		template <class ObjType, class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) :
-			_task_object(std::bind(func, obj, _bind_forward<ArgTypes>(args) ...)),
-			_task_future(_task_object.get_future())
-		{
-		}
-		task<RetType, ParamTypes ...>(task<RetType, ParamTypes ...> const &) = delete;
-		task<RetType, ParamTypes ...> & operator=(task<RetType, ParamTypes ...> const &) = delete;
-		template <class ... MoveParamTypes>
-		task<RetType, ParamTypes ...>(task<RetType, MoveParamTypes ...> && that) // Move pseudo-constructor
-		{
-			switch (_task_state.load(std::memory_order_acquire))
-			{
-				case task_state::waiting:
-				case task_state::running:
-					throw task_error(task_error_code::state_loss_would_occur);
-				default:
-					break;
-			}
-
-			_task_object = std::move(that._task_object);
-			_task_future = std::move(that._task_future);
-			_task_result = std::move(that._task_result);
-			_task_exception = that._task_exception;
-			that._task_exception = nullptr;
-			_task_state.store(that._task_state.exchange(task_state::null,
-														std::memory_order_relaxed),
-							  std::memory_order_relaxed);
-		}
-		template <class ... MoveParamTypes>
-		task<RetType, ParamTypes ...> & operator=(task<RetType, MoveParamTypes ...> && that) // Move assignment pseudo-operator
-		{
-			switch (_task_state.load(std::memory_order_acquire))
-			{
-				case task_state::waiting:
-				case task_state::running:
-					throw task_error(task_error_code::state_loss_would_occur);
-				default:
-					break;
-			}
-
-			_task_object = std::move(that._task_object);
-			_task_future = std::move(that._task_future);
-			_task_result = std::move(that._task_result);
-			_task_exception = that._task_exception;
-			that._task_exception = nullptr;
-			_task_state.store(that._task_state.exchange(task_state::null,
-														std::memory_order_relaxed),
-							  std::memory_order_relaxed);
-
-			return *this;
-		}
-		~task<RetType, ParamTypes ...>() = default;
 
 		void operator()()
 		{
@@ -261,46 +248,54 @@ namespace stp
 			_task_function(task_state::running);
 		}
 	private:
-		std::packaged_task<RetType()> _task_object;
-		std::future<RetType> _task_future;
-		std::shared_ptr<RetType> _task_result;
-		std::exception_ptr _task_exception;
-		std::atomic<task_state> _task_state{ task_state::suspended };
-
 		void _task_function(task_state state)
 		{
 			_task_state.store(state, std::memory_order_release);
 
 			if (state == task_state::running)
 			{
-				_task_object();
+				_task_package();
 				_task_state.store(task_state::ready, std::memory_order_release);
 			}
 		}
-
-		std::add_lvalue_reference_t<RetType> _if_constexpr_get(std::true_type)
+		std::add_lvalue_reference_t<RetType> _if_constexpr_1_get(std::true_type)
+		{
+			return _if_constexpr_2_get(std::integral_constant<bool, !std::is_reference<RetType>::value>());
+		}
+		void _if_constexpr_1_get(std::false_type)
+		{
+			return;
+		}
+		std::add_lvalue_reference_t<RetType> _if_constexpr_2_get(std::true_type)
 		{
 			return *_task_result;
 		}
-		void _if_constexpr_get(std::false_type)
+		std::add_lvalue_reference_t<RetType> _if_constexpr_2_get(std::false_type)
 		{
+			return *(*_task_result);
 		}
-
-		void _if_constexpr_wait(std::true_type)
+		void _if_constexpr_1_wait(std::true_type)
+		{
+			_if_constexpr_2_wait(std::integral_constant<bool, !std::is_reference<RetType>::value>());
+		}
+		void _if_constexpr_1_wait(std::false_type)
 		{
 			_task_future.get();
 		}
-		void _if_constexpr_wait(std::false_type)
+		void _if_constexpr_2_wait(std::true_type)
 		{
-			_task_result = std::make_unique<RetType>(std::move(_task_future.get()));
+			_task_result = std::make_unique<RetType>(_task_future.get());
+		}
+		void _if_constexpr_2_wait(std::false_type)
+		{
+			_task_result = std::make_unique<std::decay_t<RetType> *>(&_task_future.get());
 		}
 
 		template <class ArgType>
-		static auto _bind_forward(std::remove_reference_t<ArgType> & arg)
+		static auto _bind_forward(ArgType && arg)
 		{
-			return _if_constexpr_bind_forward<ArgType>(std::is_lvalue_reference<ArgType>(), arg);
+			return _if_constexpr_bind_forward<ArgType>(std::is_lvalue_reference<ArgType>(), std::forward<ArgType>(arg));
 		}
-
 		template <class ArgType>
 		static auto _if_constexpr_bind_forward(std::true_type, std::remove_reference_t<ArgType> & arg)
 		{
@@ -312,7 +307,14 @@ namespace stp
 			return std::bind(std::move<ArgType &>, std::ref(arg));
 		}
 
-		template <class MoveRetType, class ... MoveParamTypes> friend class task; // Required by pseudo-move constructor and pseudo-move assignment operator
+		std::packaged_task<RetType()> _task_package;
+		std::future<RetType> _task_future;
+		std::shared_ptr<ResultType> _task_result;
+		std::exception_ptr _task_exception;
+		std::atomic<task_state> _task_state{ task_state::null };
+
+		template <class MoveRetType, class ... MoveParamTypes>
+		friend class task;
 		friend class threadpool;
 	};
 
@@ -327,7 +329,7 @@ namespace stp
 		return task<RetType>(func, obj, std::forward<ArgTypes>(args) ...);
 	}
 
-	enum class threadpool_state
+	enum class threadpool_state : uint_fast8_t
 	{
 		running,
 		stopped,
@@ -337,8 +339,53 @@ namespace stp
 	class threadpool
 	{
 	public:
+		threadpool(size_t size = std::thread::hardware_concurrency(),
+				   threadpool_state state = threadpool_state::running,
+				   int_fast8_t minimum_priority = std::numeric_limits<int_fast8_t>::min() + 1,
+				   int_fast8_t maximum_priority = std::numeric_limits<int_fast8_t>::max() - 1) :
+			_threadpool_size(size),
+			_threadpool_state(state),
+			_threadpool_minimum_priority(_clamp(minimum_priority,
+												std::numeric_limits<int_fast8_t>::min() + 1,
+												std::numeric_limits<int_fast8_t>::max() - 1)),
+			_threadpool_maximum_priority(_clamp(maximum_priority,
+												std::numeric_limits<int_fast8_t>::min() + 1,
+												std::numeric_limits<int_fast8_t>::max() - 1)),
+			_threadpool_default_priority(_threadpool_minimum_priority / 2 + _threadpool_maximum_priority / 2)
+		{
+			for (size_t n = 0; n < size; ++n)
+			{
+				_threadpool_thread_list.emplace_back(this);
+			}
+		}
+		threadpool(threadpool &&) = delete;
+		threadpool & operator=(threadpool &&) = delete;
+		~threadpool()
+		{
+			_threadpool_mutex.lock();
+
+			_threadpool_state = threadpool_state::terminating;
+
+			_threadpool_condvar.notify_all();
+
+			_threadpool_mutex.unlock();
+
+			for (auto & thread : _threadpool_thread_list)
+			{
+				if (thread.active)
+				{
+					thread.thread.join();
+				}
+			}
+		}
+
 		template <class RetType, class ... ParamTypes>
-		void push_task(task<RetType, ParamTypes ...> & task, task_priority priority = default_priority)
+		void push(task<RetType, ParamTypes ...> & task)
+		{
+			push(task, _threadpool_default_priority);
+		}
+		template <class RetType, class ... ParamTypes>
+		void push(task<RetType, ParamTypes ...> & task, int_fast8_t priority)
 		{
 			switch (task._task_state.load(std::memory_order_relaxed))
 			{
@@ -352,32 +399,89 @@ namespace stp
 					break;
 			}
 
+			task._task_function(task_state::waiting);
+
 			std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
+
+			priority = _clamp(priority,
+							  std::min(_threadpool_minimum_priority, _threadpool_maximum_priority),
+							  std::max(_threadpool_minimum_priority, _threadpool_maximum_priority));
 
 			_threadpool_task_queue.emplace(std::bind(&stp::task<RetType, ParamTypes ...>::_task_function,
 													 &task,
 													 std::placeholders::_1),
-										   static_cast<uint_fast8_t>(priority));
+										   &task,
+										   static_cast<uint_fast8_t>(std::abs(_threadpool_minimum_priority - priority) + 1));
 
-			_threadpool_task_priority.store(_threadpool_task_queue.top().priority, std::memory_order_release);
+			_threadpool_task_set.insert(&task);
+
+			_threadpool_task.store(true, std::memory_order_release);
 
 			_threadpool_condvar.notify_one();
 		}
-		void pop_tasks()
+		bool pop()
 		{
-			if (_threadpool_task_priority.load(std::memory_order_acquire))
-			{
-				std::lock(_threadpool_task_mutex, _threadpool_mutex);
-				std::lock_guard<std::mutex> lock1(_threadpool_task_mutex, std::adopt_lock);
-				std::lock_guard<std::shared_timed_mutex> lock2(_threadpool_mutex, std::adopt_lock);
+			std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
 
-				while (!_threadpool_task_queue.empty())
+			return _threadpool_task_set.size() ? _threadpool_task_set.clear(), true : false;
+		}
+		template <class RetType, class ... ParamTypes>
+		bool pop(task<RetType, ParamTypes ...> & task)
+		{
+			std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
+
+			return _threadpool_task_set.erase(&task);
+		}
+		void resize(size_t new_size)
+		{
+			if (_threadpool_size != new_size)
+			{
+				std::lock_guard<std::shared_timed_mutex> lock(_threadpool_mutex);
+
+				size_t delta_size = std::max(_threadpool_size, new_size) - std::min(_threadpool_size, new_size);
+
+				if (_threadpool_size < new_size)
 				{
-					_threadpool_task_queue.top().function(task_state::suspended);
-					_threadpool_task_queue.pop();
+					auto it = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end();
+					for (size_t n = 0; n < delta_size; ++it)
+					{
+						if (it != it_e)
+						{
+							if (it->inactive)
+							{
+								it->active = true;
+								it->inactive = false;
+								it->thread = std::thread(&threadpool::_threadpool_function, this, &*it);
+
+								++n;
+							}
+						}
+						else
+						{
+							while (n++ < delta_size)
+							{
+								_threadpool_thread_list.emplace_back(this);
+							}
+						}
+					}
+				}
+				else
+				{
+					auto it_b = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end(), it = it_b;
+					for (size_t n = 0; n < delta_size; ++it == it_e ? it = it_b, void() : void())
+					{
+						if (it->active)
+						{
+							it->active = false;
+
+							++n;
+						}
+					}
+
+					_threadpool_condvar.notify_all();
 				}
 
-				_threadpool_task_priority.store(0, std::memory_order_release);
+				_threadpool_size = new_size;
 			}
 		}
 		void run()
@@ -400,58 +504,11 @@ namespace stp
 				_threadpool_state = threadpool_state::stopped;
 			}
 		}
-		void resize(size_t new_size)
+		void default_priority(int_fast8_t new_priority)
 		{
-			if (_threadpool_size != new_size)
-			{
-				std::lock_guard<std::shared_timed_mutex> lock(_threadpool_mutex);
-
-				uintmax_t size_diff = std::abs(static_cast<intmax_t>(_threadpool_size)
-											   - static_cast<intmax_t>(new_size));
-
-				if (_threadpool_size < new_size)
-				{
-					auto it = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end();
-					for (uintmax_t n = 0; n < size_diff; ++it)
-					{
-						if (it != it_e)
-						{
-							if (!it->active)
-							{
-								it->task = {};
-								it->active = true;
-								it->thread = std::thread(&threadpool::_threadpool_pool, this, &*it);
-
-								++n;
-							}
-						}
-						else
-						{
-							while (n++ < size_diff)
-							{
-								_threadpool_thread_list.emplace_back(this);
-							}
-						}
-					}
-				}
-				else
-				{
-					auto it_b = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end(), it = it_b;
-					for (uintmax_t n = 0; n < size_diff; ++it == it_e ? it = it_b, void() : void())
-					{
-						if (it->active)
-						{
-							it->active = false;
-
-							++n;
-						}
-					}
-
-					_threadpool_condvar.notify_all();
-				}
-
-				_threadpool_size = new_size;
-			}
+			_threadpool_default_priority = _clamp(new_priority,
+												  std::min(_threadpool_minimum_priority, _threadpool_maximum_priority),
+												  std::max(_threadpool_minimum_priority, _threadpool_maximum_priority));
 		}
 		size_t size() const
 		{
@@ -461,188 +518,131 @@ namespace stp
 		{
 			return _threadpool_state;
 		}
-
-		threadpool(size_t size = std::thread::hardware_concurrency(), threadpool_state state = threadpool_state::running) :
-			_threadpool_size(size),
-			_threadpool_state(state)
+		int_fast8_t minimum_priority() const
 		{
-			for (size_t n = 0; n < size; ++n)
-			{
-				_threadpool_thread_list.emplace_back(this);
-			}
+			return _threadpool_minimum_priority;
 		}
-		threadpool(threadpool const &) = delete;
-		threadpool & operator=(threadpool const &) = delete;
-		threadpool(threadpool &&) = delete;
-		threadpool & operator=(threadpool &&) = delete;
-		~threadpool()
+		int_fast8_t maximum_priority() const
 		{
-			{
-				std::lock_guard<std::shared_timed_mutex> lock(_threadpool_mutex);
-
-				_threadpool_state = threadpool_state::terminating;
-
-				_threadpool_condvar.notify_all();
-			}
-
-			for (auto & thread : _threadpool_thread_list)
-			{
-				if (thread.active)
-				{
-					thread.thread.join();
-				}
-			}
+			return _threadpool_maximum_priority;
+		}
+		int_fast8_t default_priority() const
+		{
+			return _threadpool_default_priority;
 		}
 	private:
 		struct _task
 		{
+			_task(std::function<void(task_state)> func = nullptr, void * id = nullptr, uint_fast8_t prty = 0) :
+				function(func),
+				identity(id),
+				priority(prty)
+			{
+			}
+
+			bool operator<(_task const & other) const
+			{
+				return priority != other.priority ? priority < other.priority : origin > other.origin;
+			}
+
 			std::function<void(task_state)> function;
+			void * identity;
 			uint_fast8_t priority;
 			std::chrono::steady_clock::time_point origin{ std::chrono::steady_clock::now() };
-
-			_task(std::function<void(task_state)> function = nullptr, uint_fast8_t priority = 0) :
-				function(function),
-				priority(priority)
-			{
-				if (function)
-				{
-					function(task_state::waiting);
-				}
-			}
-
-			bool operator<(_task const & that) const
-			{
-				return priority != that.priority ? priority < that.priority : origin > that.origin;
-			}
 		};
-
 		struct _thread
 		{
-			_task task;
-			bool active{ true };
-			std::thread thread; // Must be the last variable to be initialized
-
 			_thread(threadpool * threadpool) :
-				thread(&threadpool::_threadpool_pool, threadpool, this)
+				thread(&threadpool::_threadpool_function, threadpool, this)
 			{
 			}
 
-			bool operator==(_thread const & that) const
+			bool operator==(_thread const & other) const
 			{
-				return thread.get_id() == that.thread.get_id();
+				return thread.get_id() == other.thread.get_id();
 			}
+
+			_task task;
+			bool valid{ true };
+			bool active{ true };
+			bool inactive{ false };
+			std::thread thread; // Must be the last variable to be initialized
 		};
 
-		size_t _threadpool_size;
-		threadpool_state _threadpool_state;
-		std::list<_thread> _threadpool_thread_list;
-		std::priority_queue<_task, std::deque<_task>> _threadpool_task_queue;
-		std::atomic<uint_fast8_t> _threadpool_task_priority{ 0 };
-		std::mutex _threadpool_task_mutex;
-		std::shared_timed_mutex _threadpool_mutex;
-		std::condition_variable_any _threadpool_condvar;
-
-		void _threadpool_pool(_thread * this_thread)
+		void _threadpool_function(_thread * this_thread)
 		{
 			std::shared_lock<std::shared_timed_mutex> threadpool_lock(_threadpool_mutex);
 
-			threadpool_state state = _threadpool_state;
-			uint_fast8_t priority = 0;
-
-			while (state != threadpool_state::terminating)
+			for (;;)
 			{
-				priority = _threadpool_task_priority.load(std::memory_order_acquire);
-
-				while (state != threadpool_state::terminating && this_thread->active
-					   && ((!priority
-							? !this_thread->task.function || state == threadpool_state::stopped
-							: false)
-						   || (priority <= this_thread->task.priority
-							   && this_thread->task.function
-							   && state == threadpool_state::stopped)))
+				while (_threadpool_state != threadpool_state::terminating
+					   && this_thread->active
+					   && (!_threadpool_task.load(std::memory_order_acquire)
+						   || _threadpool_state == threadpool_state::stopped))
 				{
 					_threadpool_condvar.wait(threadpool_lock);
-
-					state = _threadpool_state;
-					priority = _threadpool_task_priority.load(std::memory_order_acquire);
 				}
 
-				if (!this_thread->active)
+				if (_threadpool_state == threadpool_state::terminating || !this_thread->active)
 				{
-					if (this_thread->task.function)
+					if ((this_thread->inactive = !this_thread->active) == true)
 					{
-						std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
-
-						_threadpool_task_queue.push(this_thread->task);
-
-						_threadpool_task_priority.store(_threadpool_task_queue.top().priority,
-														std::memory_order_release);
+						this_thread->thread.detach();
 					}
-
-					this_thread->thread.detach();
 
 					return;
 				}
 
 				threadpool_lock.unlock();
 
-				switch (state)
 				{
-					case threadpool_state::running:
-					case threadpool_state::stopped:
-						if (!this_thread->task.function || priority > this_thread->task.priority)
-						{
-							std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
+					std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
 
-							priority = _threadpool_task_priority.load(std::memory_order_relaxed);
+					if (_threadpool_task.load(std::memory_order_relaxed))
+					{
+						this_thread->task = std::move(_threadpool_task_queue.top());
+						this_thread->valid = _threadpool_task_set.erase(this_thread->task.identity);
+						_threadpool_task_queue.pop();
 
-							if (!this_thread->task.function)
-							{
-								if (priority)
-								{
-									this_thread->task = _threadpool_task_queue.top();
-									_threadpool_task_queue.pop();
-
-									_threadpool_task_priority.store(!_threadpool_task_queue.empty()
-																	? _threadpool_task_queue.top().priority
-																	: 0,
-																	std::memory_order_release);
-								}
-							}
-							else if (priority > this_thread->task.priority)
-							{
-								_threadpool_task_queue.push(this_thread->task);
-
-								this_thread->task = _threadpool_task_queue.top();
-								_threadpool_task_queue.pop();
-
-								_threadpool_task_priority.store(_threadpool_task_queue.top().priority,
-																std::memory_order_release);
-							}
-						}
-					case threadpool_state::terminating:
-						break;
+						_threadpool_task.store(!_threadpool_task_queue.empty(), std::memory_order_release);
+					}
 				}
 
-				switch (state)
+				if (this_thread->task.function)
 				{
-					case threadpool_state::running:
-						if (this_thread->task.function)
-						{
-							this_thread->task.function(task_state::running);
-							this_thread->task.function = nullptr;
-							this_thread->task.priority = 0;
-						}
-					case threadpool_state::stopped:
-					case threadpool_state::terminating:
-						break;
+					if (this_thread->valid)
+					{
+						this_thread->task.function(task_state::running);
+					}
+					else
+					{
+						this_thread->task.function(task_state::suspended);
+					}
+
+					this_thread->task.function = nullptr;
 				}
 
 				threadpool_lock.lock();
-
-				state = _threadpool_state;
 			}
 		}
+
+		static int_fast8_t const & _clamp(int_fast8_t const & value, int_fast8_t const & low, int_fast8_t const & high)
+		{
+			return value < low ? low : value > high ? high : value;
+		}
+
+		size_t _threadpool_size;
+		threadpool_state _threadpool_state;
+		int_fast8_t const _threadpool_minimum_priority;
+		int_fast8_t const _threadpool_maximum_priority;
+		int_fast8_t _threadpool_default_priority;
+		std::atomic<bool> _threadpool_task{ false };
+		std::priority_queue<_task, std::deque<_task>> _threadpool_task_queue;
+		std::unordered_set<void *> _threadpool_task_set;
+		std::list<_thread> _threadpool_thread_list;
+		std::mutex _threadpool_task_mutex;
+		std::shared_timed_mutex _threadpool_mutex;
+		std::condition_variable_any _threadpool_condvar;
 	};
 }
 

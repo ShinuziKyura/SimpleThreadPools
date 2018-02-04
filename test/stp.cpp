@@ -6,50 +6,51 @@
 #include <random>
 
 #define DYNAMIC_ALLOCATION 0
-#define	OUTPUT_TO_FILE 0
+#define	FILE_OUTPUT 0
+#define TEST_AMOUNT 1
 
 #if DYNAMIC_ALLOCATION
-#include "..\ptr\stp.hpp" // Minimum standard version: C++14
+#include "..\ptr\stp.hpp" // Standard revision required: C++14
 #else
-#include "..\any\stp.hpp" // Minimum standard version: C++17
+#include "..\any\stp.hpp" // Standard revision required: C++17
 #endif
 
 using				ARRAY_TYPE			= uint64_t;
 constexpr size_t	ARRAY_SIZE			= 1000000;
 constexpr size_t	ARRAY_AMOUNT		= 16;
-constexpr size_t	THREAD_AMOUNT		= 8;
+constexpr size_t	THREAD_AMOUNT		= 16;
 
 namespace util
 {
-	std::string state_to_string(stp::task_state state)
+	char const * state_to_string(stp::task_state state)
 	{
 		switch (state)
 		{
 			case stp::task_state::ready:
-				return std::string("ready");
+				return "ready";
 			case stp::task_state::running:
-				return std::string("running");
+				return "running";
 			case stp::task_state::waiting:
-				return std::string("waiting");
+				return "waiting";
 			case stp::task_state::suspended:
-				return std::string("suspended");
+				return "suspended";
 			case stp::task_state::null:
-				return std::string("null");
+				return "null";
 		}
-		return std::string();
+		return "";
 	}
-	std::string state_to_string(stp::threadpool_state state)
+	char const * state_to_string(stp::threadpool_state state)
 	{
 		switch (state)
 		{
 			case stp::threadpool_state::running:
-				return std::string("running");
+				return "running";
 			case stp::threadpool_state::stopped:
-				return std::string("stopped");
+				return "stopped";
 			case stp::threadpool_state::terminating:
-				return std::string("terminating");
+				return "terminating";
 		}
-		return std::string();
+		return "";
 	}
 }
 
@@ -119,10 +120,10 @@ long double sorter(std::array<ArrayType, ArraySize> & array)
 long double test()
 {
 	stp::threadpool threadpool(THREAD_AMOUNT);
-
+	
 	std::vector<stp::task<long double>> tasks;
 	tasks.reserve(ARRAY_AMOUNT);
-	
+
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
 
@@ -131,7 +132,7 @@ long double test()
 	std::cout <<
 		"\tThreadpool size: " << threadpool.size() << "\n"
 		"\tThreadpool state: " << util::state_to_string(threadpool.state()) << "\n\n";
-
+	
 	//	Array generation
 
 	{
@@ -147,12 +148,12 @@ long double test()
 
 		for (auto & task : tasks)
 		{
-			threadpool.push_task(task);
+			threadpool.push(task);
 		}
 		
 		while (!std::all_of(std::begin(tasks), std::end(tasks), [] (stp::task<long double> & task)
 		{
-			return task.state() == stp::task_state::ready;
+			return task.ready();
 		}))
 		{
 			std::this_thread::yield();
@@ -193,7 +194,7 @@ long double test()
 		for (auto & array : arrays)
 		{
 			tasks.emplace_back(generator<ARRAY_TYPE, ARRAY_SIZE>, *array);
-			threadpool.push_task(tasks.back());
+			threadpool.push(tasks.back());
 		}
 		
 		start_timer = std::chrono::steady_clock::now();
@@ -202,7 +203,7 @@ long double test()
 
 		while (!std::all_of(std::begin(tasks), std::end(tasks), [] (stp::task<long double> & task)
 		{
-			return task.state() == stp::task_state::ready;
+			return task.ready();
 		}))
 		{
 			std::this_thread::yield();
@@ -239,22 +240,25 @@ int main()
 
 	std::ios_base::sync_with_stdio(false);
 
-#if (OUTPUT_TO_FILE)
+#if (FILE_OUTPUT)
 	std::fstream fout("stp.tests", std::ios::out | std::ios::trunc);
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
 
-	std::cout << std::scientific <<
-		"Test begin...\n" << std::endl;
+	for (size_t idx = 1; idx <= TEST_AMOUNT; ++idx)
+	{
+		std::cout << std::scientific <<
+			"Test " << idx << " begin...\n" << std::endl;
 
-	long double total_time = test();
+		long double total_time = test();
 
-	std::cout <<
-		"Total time elapsed:\n" <<
-		total_time << " s\n\n"
-		"Test end\n" << std::endl;
+		std::cout <<
+			"Total time elapsed:\n" <<
+			total_time << " s\n\n"
+			"Test " << idx << " end\n" << std::endl;
+	}
 
-#if (OUTPUT_TO_FILE)
+#if (FILE_OUTPUT)
 	fout.close();
 	std::cout.rdbuf(cout_buffer);
 #endif
@@ -262,8 +266,8 @@ int main()
 	std::cout <<
 		"======================\n\n"
 		"Press enter to exit..." << std::endl;
-
+	
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-
+	
 	return 0;
 }
