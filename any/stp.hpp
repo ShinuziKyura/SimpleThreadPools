@@ -9,7 +9,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.9.0 - Only allocates big objects inside stp::task objects dynamically
+// SimpleThreadPools - version B.3.9.1 - Only allocates big objects inside stp::task objects dynamically
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -154,11 +154,11 @@ namespace stp
 			{
 				if constexpr (std::negation_v<std::is_reference<RetType>>)
 				{
-					return std::any_cast<RetType &>(_task_result);
+					return std::any_cast<std::add_lvalue_reference_t<RetType>>(_task_result);
 				}
 				else
 				{
-					return *std::any_cast<std::decay_t<RetType> *>(_task_result);
+					return *std::any_cast<std::remove_reference_t<RetType> *>(_task_result);
 				}
 			}
 		}
@@ -186,7 +186,7 @@ namespace stp
 						}
 						else
 						{
-							_task_result = std::make_any<std::decay_t<RetType> *>(&_task_future.get());
+							_task_result = std::make_any<std::remove_reference_t<RetType> *>(&_task_future.get());
 						}
 					}
 					else

@@ -8,7 +8,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.9.0 - Always allocates objects inside stp::task objects dynamically
+// SimpleThreadPools - version B.3.9.1 - Always allocates objects inside stp::task objects dynamically
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -57,7 +57,7 @@ namespace stp
 	class task
 	{
 		static_assert(!std::is_rvalue_reference<RetType>::value, "stp::task<T>: T may not be of rvalue-reference type");
-		using ResultType = std::conditional_t<!std::is_reference<RetType>::value, RetType, std::decay_t<RetType> *>;
+		using ResultType = std::conditional_t<!std::is_reference<RetType>::value, RetType, std::remove_reference_t<RetType> *>;
 	public:
 		task<RetType, ParamTypes ...>() = default;
 		template <class ... AutoParamTypes, class ... ArgTypes>
@@ -288,7 +288,7 @@ namespace stp
 		}
 		void _if_constexpr_2_wait(std::false_type)
 		{
-			_task_result = std::make_unique<std::decay_t<RetType> *>(&_task_future.get());
+			_task_result = std::make_unique<std::remove_reference_t<RetType> *>(&_task_future.get());
 		}
 
 		template <class ArgType>
