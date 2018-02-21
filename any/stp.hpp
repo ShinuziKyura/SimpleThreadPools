@@ -9,7 +9,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.9.1 - Only allocates big objects inside stp::task objects dynamically
+// SimpleThreadPools - version B.3.9.2 - Only allocates big objects inside stp::task objects dynamically
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -145,8 +145,6 @@ namespace stp
 
 			if (_task_result.type() == typeid(_exception_ptr))
 			{
-				_task_state.store(task_state::null, std::memory_order_relaxed);
-
 				std::rethrow_exception(std::any_cast<_exception_ptr>(_task_result).exception);
 			}
 
@@ -208,19 +206,15 @@ namespace stp
 		template <class Clock, class Duration>
 		task_state wait_until(std::chrono::time_point<Clock, Duration> const & timeout_time)
 		{
-			auto state = _task_state.load(std::memory_order_acquire);
-			
-			switch (state)
+			switch (_task_state.load(std::memory_order_acquire))
 			{
 				case task_state::null:
 					throw task_error(task_error_code::no_state);
+				case task_state::waiting:
+				case task_state::running:
+					_task_future.wait_until(timeout_time);
 				default:
 					break;
-			}
-
-			if (state == task_state::waiting || state == task_state::running)
-			{
-				_task_future.wait_until(timeout_time);
 			}
 
 			return _task_state.load(std::memory_order_acquire);
@@ -561,7 +555,6 @@ namespace stp
 			}
 
 			_task task;
-			bool valid{ true };
 			bool active{ true };
 			bool inactive{ false };
 			std::thread thread; // Must be the last variable to be initialized
@@ -570,6 +563,8 @@ namespace stp
 		void _threadpool_function(_thread * this_thread)
 		{
 			std::shared_lock<std::shared_mutex> threadpool_lock(_threadpool_mutex);
+
+			bool function = true;
 
 			for (;;)
 			{
@@ -593,11 +588,11 @@ namespace stp
 
 				threadpool_lock.unlock();
 					
-				if (std::scoped_lock<std::mutex> lock(_threadpool_task_mutex); 
+				if (std::scoped_lock<std::mutex> lock(_threadpool_task_mutex);
 					_threadpool_task.load(std::memory_order_relaxed))
 				{
 					this_thread->task = std::move(_threadpool_task_queue.top());
-					this_thread->valid = _threadpool_task_set.erase(this_thread->task.identity);
+					function = _threadpool_task_set.erase(this_thread->task.identity);
 					_threadpool_task_queue.pop();
 
 					_threadpool_task.store(!_threadpool_task_queue.empty(), std::memory_order_release);
@@ -605,7 +600,7 @@ namespace stp
 				
 				if (this_thread->task.function)
 				{
-					if (this_thread->valid)
+					if (function)
 					{
 						this_thread->task.function(task_state::running);
 					}
