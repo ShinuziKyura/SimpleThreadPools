@@ -557,8 +557,6 @@ namespace stp
 			std::shared_lock<std::shared_mutex> threadpool_lock(_threadpool_mutex);
 			bool function = true;
 
-			goto _threadpool_function_loop_entry_point;
-
 			while (_threadpool_state != threadpool_state::terminating && this_thread->active)
 			{
 				if (_threadpool_state == threadpool_state::running && _threadpool_task.load(std::memory_order_acquire))
@@ -593,8 +591,6 @@ namespace stp
 
 					threadpool_lock.lock();
 				}
-
-				_threadpool_function_loop_entry_point:
 
 				_threadpool_condvar.wait(threadpool_lock);
 			}
