@@ -8,7 +8,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.9.2 - Always allocates objects inside stp::task objects dynamically
+// SimpleThreadPools - version B.3.9.3 - Always allocates objects inside stp::task objects dynamically
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -104,8 +104,7 @@ namespace stp
 			_task_future = std::move(other._task_future);
 			_task_result = std::move(other._task_result);
 			_task_exception = std::move(other._task_exception);
-			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed),
-							  std::memory_order_relaxed);
+			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed), std::memory_order_relaxed);
 		}
 		template <class ... MoveParamTypes>
 		task<RetType, ParamTypes ...> & operator=(task<RetType, MoveParamTypes ...> && other) // Move assignment pseudo-operator
@@ -123,8 +122,7 @@ namespace stp
 			_task_future = std::exchange(other._task_future, std::future<RetType>());
 			_task_result = std::exchange(other._task_result, std::shared_ptr<ResultType>());
 			_task_exception = std::exchange(other._task_exception, std::exception_ptr());
-			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed),
-							  std::memory_order_relaxed);
+			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed), std::memory_order_relaxed);
 
 			return *this;
 		}
@@ -249,6 +247,7 @@ namespace stp
 			if (state == task_state::running)
 			{
 				_task_package();
+
 				_task_state.store(task_state::ready, std::memory_order_release);
 			}
 		}
@@ -333,19 +332,27 @@ namespace stp
 	class threadpool
 	{
 	public:
-		threadpool(size_t size = std::thread::hardware_concurrency(),
-				   threadpool_state state = threadpool_state::running,
-				   int_fast8_t minimum_priority = std::numeric_limits<int_fast8_t>::min() + 1,
-				   int_fast8_t maximum_priority = std::numeric_limits<int_fast8_t>::max() - 1) :
+		threadpool(size_t size = std::thread::hardware_concurrency(), threadpool_state state = threadpool_state::running) :
 			_threadpool_size(size),
-			_threadpool_state(state),
-			_threadpool_minimum_priority(_clamp(minimum_priority,
-												std::numeric_limits<int_fast8_t>::min() + 1,
-												std::numeric_limits<int_fast8_t>::max() - 1)),
-			_threadpool_maximum_priority(_clamp(maximum_priority,
-												std::numeric_limits<int_fast8_t>::min() + 1,
-												std::numeric_limits<int_fast8_t>::max() - 1)),
-			_threadpool_default_priority(_threadpool_minimum_priority / 2 + _threadpool_maximum_priority / 2)
+			_threadpool_state(state)
+		{
+			for (size_t n = 0; n < size; ++n)
+			{
+				_threadpool_thread_list.emplace_back(this);
+			}
+		}
+		threadpool(int_fast8_t minimum_priority,
+				   int_fast8_t maximum_priority,
+				   int_fast8_t default_priority,
+				   size_t size = std::thread::hardware_concurrency(),
+				   threadpool_state state = threadpool_state::running) :
+			_threadpool_minimum_priority(minimum_priority),
+			_threadpool_maximum_priority(maximum_priority),
+			_threadpool_default_priority(_clamp(default_priority,
+												std::min(minimum_priority, maximum_priority),
+												std::max(minimum_priority, maximum_priority))),
+			_threadpool_size(size),
+			_threadpool_state(state)
 		{
 			for (size_t n = 0; n < size; ++n)
 			{
@@ -395,29 +402,23 @@ namespace stp
 
 			task._task_function(task_state::waiting);
 
-			std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
-
 			priority = _clamp(priority,
 							  std::min(_threadpool_minimum_priority, _threadpool_maximum_priority),
 							  std::max(_threadpool_minimum_priority, _threadpool_maximum_priority));
+
+			std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
 
 			_threadpool_task_queue.emplace(std::bind(&stp::task<RetType, ParamTypes ...>::_task_function,
 													 &task,
 													 std::placeholders::_1),
 										   &task,
-										   static_cast<uint_fast8_t>(std::abs(_threadpool_minimum_priority - priority) + 1));
+										   uint_fast8_t(std::abs(_threadpool_minimum_priority - priority)));
 
 			_threadpool_task_set.insert(&task);
 
 			_threadpool_task.store(true, std::memory_order_release);
 
 			_threadpool_condvar.notify_one();
-		}
-		bool pop()
-		{
-			std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
-
-			return _threadpool_task_set.size() ? _threadpool_task_set.clear(), true : false;
 		}
 		template <class RetType, class ... ParamTypes>
 		bool pop(task<RetType, ParamTypes ...> & task)
@@ -431,7 +432,6 @@ namespace stp
 			if (_threadpool_size != new_size)
 			{
 				std::lock_guard<std::shared_timed_mutex> lock(_threadpool_mutex);
-
 				size_t delta_size = std::max(_threadpool_size, new_size) - std::min(_threadpool_size, new_size);
 
 				if (_threadpool_size < new_size)
@@ -498,12 +498,6 @@ namespace stp
 				_threadpool_state = threadpool_state::stopped;
 			}
 		}
-		void default_priority(int_fast8_t new_priority)
-		{
-			_threadpool_default_priority = _clamp(new_priority,
-												  std::min(_threadpool_minimum_priority, _threadpool_maximum_priority),
-												  std::max(_threadpool_minimum_priority, _threadpool_maximum_priority));
-		}
 		size_t size() const
 		{
 			return _threadpool_size;
@@ -527,10 +521,10 @@ namespace stp
 	private:
 		struct _task
 		{
-			_task(std::function<void(task_state)> func = nullptr, void * id = nullptr, uint_fast8_t prty = 0) :
+			_task(std::function<void(task_state)> func = nullptr, void * iden = nullptr, uint_fast8_t prio = 0) :
 				function(func),
-				identity(id),
-				priority(prty)
+				identity(iden),
+				priority(prio)
 			{
 			}
 
@@ -565,59 +559,56 @@ namespace stp
 		void _threadpool_function(_thread * this_thread)
 		{
 			std::shared_lock<std::shared_timed_mutex> threadpool_lock(_threadpool_mutex);
-
 			bool function = true;
 
-			for (;;)
+			goto _threadpool_function_loop_entry_point;
+
+			while (_threadpool_state != threadpool_state::terminating && this_thread->active)
 			{
-				while (_threadpool_state != threadpool_state::terminating
-					   && this_thread->active
-					   && (!_threadpool_task.load(std::memory_order_acquire)
-						   || _threadpool_state == threadpool_state::stopped))
+				if (_threadpool_state == threadpool_state::running && _threadpool_task.load(std::memory_order_acquire))
 				{
-					_threadpool_condvar.wait(threadpool_lock);
-				}
+					threadpool_lock.unlock();
 
-				if (_threadpool_state == threadpool_state::terminating || !this_thread->active)
-				{
-					if ((this_thread->inactive = !this_thread->active) == true)
 					{
-						this_thread->thread.detach();
+						std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
+
+						if (_threadpool_task.load(std::memory_order_relaxed))
+						{
+							this_thread->task = std::move(_threadpool_task_queue.top());
+
+							function = _threadpool_task_set.erase(this_thread->task.identity);
+
+							_threadpool_task_queue.pop();
+
+							_threadpool_task.store(!_threadpool_task_queue.empty(), std::memory_order_release);
+						}
 					}
 
-					return;
-				}
-
-				threadpool_lock.unlock();
-
-				{
-					std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
-
-					if (_threadpool_task.load(std::memory_order_relaxed))
+					if (this_thread->task.function)
 					{
-						this_thread->task = std::move(_threadpool_task_queue.top());
-						function = _threadpool_task_set.erase(this_thread->task.identity);
-						_threadpool_task_queue.pop();
+						if (function)
+						{
+							this_thread->task.function(task_state::running);
+						}
+						else
+						{
+							this_thread->task.function(task_state::suspended);
+						}
 
-						_threadpool_task.store(!_threadpool_task_queue.empty(), std::memory_order_release);
-					}
-				}
-
-				if (this_thread->task.function)
-				{
-					if (function)
-					{
-						this_thread->task.function(task_state::running);
-					}
-					else
-					{
-						this_thread->task.function(task_state::suspended);
+						this_thread->task.function = nullptr;
 					}
 
-					this_thread->task.function = nullptr;
+					threadpool_lock.lock();
 				}
 
-				threadpool_lock.lock();
+				_threadpool_function_loop_entry_point:
+
+				_threadpool_condvar.wait(threadpool_lock);
+			}
+
+			if (bool(this_thread->inactive = !this_thread->active))
+			{
+				this_thread->thread.detach();
 			}
 		}
 
@@ -626,11 +617,11 @@ namespace stp
 			return value < low ? low : value > high ? high : value;
 		}
 
+		int_fast8_t const _threadpool_minimum_priority{ std::numeric_limits<int_fast8_t>::min() };
+		int_fast8_t const _threadpool_maximum_priority{ std::numeric_limits<int_fast8_t>::max() };
+		int_fast8_t const _threadpool_default_priority{ 0 };
 		size_t _threadpool_size;
 		threadpool_state _threadpool_state;
-		int_fast8_t const _threadpool_minimum_priority;
-		int_fast8_t const _threadpool_maximum_priority;
-		int_fast8_t _threadpool_default_priority;
 		std::atomic<bool> _threadpool_task{ false };
 		std::priority_queue<_task, std::deque<_task>> _threadpool_task_queue;
 		std::unordered_set<void *> _threadpool_task_set;

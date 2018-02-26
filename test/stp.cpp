@@ -15,12 +15,12 @@
 #include "..\any\stp.hpp" // Standard revision required: C++17
 #endif
 
-using				ARRAY_TYPE			= uint64_t;
+using				ARRAY_TYPE			= uint_least64_t;
 constexpr size_t	ARRAY_SIZE			= 1000000;
 constexpr size_t	ARRAY_AMOUNT		= 16;
 constexpr size_t	THREAD_AMOUNT		= 16;
 
-namespace util
+namespace stp::util
 {
 	char const * state_to_string(stp::task_state state)
 	{
@@ -70,7 +70,9 @@ class randint_generator
 public:
 	randint_generator<IntType>(IntType min = 0.0,
 							   IntType max = std::numeric_limits<IntType>::max()) :
-		_seeds(std::begin(_random_data), std::end(_random_data)),
+		_seeds((std::generate(std::begin(_random_data), std::end(_random_data), std::ref(_random_device)), 
+				std::begin(_random_data)), 
+			   std::end(_random_data)),
 		_engine(_seeds)
 	{
 		if (min > max)
@@ -87,10 +89,6 @@ public:
 private:
 	std::random_device _random_device;
 	std::array<std::mt19937::result_type, std::mt19937::state_size> _random_data;
-	std::nullptr_t _generate
-	{
-		(std::generate(std::begin(_random_data), std::end(_random_data), std::ref(_random_device)), nullptr)
-	};
 	std::seed_seq _seeds;
 	std::mt19937 _engine;
 	std::uniform_int_distribution<IntType> _numbers;
@@ -126,12 +124,12 @@ long double test()
 
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
-
+	
 	long double total_time = 0;
-
+	
 	std::cout <<
 		"\tThreadpool size: " << threadpool.size() << "\n"
-		"\tThreadpool state: " << util::state_to_string(threadpool.state()) << "\n\n";
+		"\tThreadpool state: " << stp::util::state_to_string(threadpool.state()) << "\n\n";
 	
 	//	Array generation
 
@@ -150,11 +148,8 @@ long double test()
 		{
 			threadpool.push(task);
 		}
-		
-		while (!std::all_of(std::begin(tasks), std::end(tasks), [] (stp::task<long double> & task)
-		{
-			return task.ready();
-		}))
+
+		while (!std::all_of(std::begin(tasks), std::end(tasks), [] (auto & task) { return task.ready(); }))
 		{
 			std::this_thread::yield();
 		}
@@ -185,6 +180,10 @@ long double test()
 	tasks.resize(0);
 	threadpool.stop();
 
+	std::cout <<
+		"\tThreadpool size: " << threadpool.size() << "\n"
+		"\tThreadpool state: " << stp::util::state_to_string(threadpool.state()) << "\n\n";
+
 	//	Array sorting
 
 	{
@@ -201,10 +200,7 @@ long double test()
 
 		threadpool.run();
 
-		while (!std::all_of(std::begin(tasks), std::end(tasks), [] (stp::task<long double> & task)
-		{
-			return task.ready();
-		}))
+		while (!std::all_of(std::begin(tasks), std::end(tasks), [] (auto & task) { return task.ready(); }))
 		{
 			std::this_thread::yield();
 		}
@@ -241,7 +237,7 @@ int main()
 	std::ios_base::sync_with_stdio(false);
 
 #if (FILE_OUTPUT)
-	std::fstream fout("stp.tests", std::ios::out | std::ios::trunc);
+	std::fstream fout(".\\test\\stp.tests", std::ios::out | std::ios::trunc);
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
 
@@ -255,7 +251,8 @@ int main()
 		std::cout <<
 			"Total time elapsed:\n" <<
 			total_time << " s\n\n"
-			"Test " << idx << " end\n" << std::endl;
+			"Test " << idx << " end\n\n"
+			"======================\n" << std::endl;
 	}
 
 #if (FILE_OUTPUT)
@@ -264,7 +261,6 @@ int main()
 #endif
 
 	std::cout <<
-		"======================\n\n"
 		"Press enter to exit..." << std::endl;
 	
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
