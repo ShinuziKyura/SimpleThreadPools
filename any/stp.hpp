@@ -9,7 +9,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.9.3 - Only allocates big objects inside stp::task objects dynamically
+// SimpleThreadPools - version B.3.9.4 - Only allocates big objects inside stp::task objects dynamically
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -448,9 +448,11 @@ namespace stp
 						}
 						else
 						{
-							while (n++ < delta_size)
+							while (n < delta_size)
 							{
 								_threadpool_thread_list.emplace_back(this);
+
+								++n;
 							}
 						}
 					}
@@ -555,7 +557,7 @@ namespace stp
 		void _threadpool_function(_thread * this_thread)
 		{
 			std::shared_lock<std::shared_mutex> threadpool_lock(_threadpool_mutex);
-			bool function = true;
+			bool valid = true;
 
 			while (_threadpool_state != threadpool_state::terminating && this_thread->active)
 			{
@@ -568,23 +570,19 @@ namespace stp
 					{
 						this_thread->task = std::move(_threadpool_task_queue.top());
 
-						function = _threadpool_task_set.erase(this_thread->task.identity);
+						valid = _threadpool_task_set.erase(this_thread->task.identity);
 
 						_threadpool_task_queue.pop();
 
-						_threadpool_task.store(!_threadpool_task_queue.empty(), std::memory_order_release);
+						if (_threadpool_task_queue.empty())
+						{
+							_threadpool_task.store(false, std::memory_order_release);
+						}
 					}
 
 					if (this_thread->task.function)
 					{
-						if (function)
-						{
-							this_thread->task.function(task_state::running);
-						}
-						else
-						{
-							this_thread->task.function(task_state::suspended);
-						}
+						this_thread->task.function(valid ? task_state::running : task_state::suspended);
 
 						this_thread->task.function = nullptr;
 					}
