@@ -104,7 +104,8 @@ namespace stp
 			_task_future = std::move(other._task_future);
 			_task_result = std::move(other._task_result);
 			_task_exception = std::move(other._task_exception);
-			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed), std::memory_order_relaxed);
+			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed),
+							  std::memory_order_relaxed);
 		}
 		template <class ... MoveParamTypes>
 		task<RetType, ParamTypes ...> & operator=(task<RetType, MoveParamTypes ...> && other) // Move assignment pseudo-operator
@@ -122,7 +123,8 @@ namespace stp
 			_task_future = std::exchange(other._task_future, std::future<RetType>());
 			_task_result = std::exchange(other._task_result, std::shared_ptr<ResultType>());
 			_task_exception = std::exchange(other._task_exception, std::exception_ptr());
-			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed), std::memory_order_relaxed);
+			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_relaxed),
+							  std::memory_order_relaxed);
 
 			return *this;
 		}
@@ -332,7 +334,8 @@ namespace stp
 	class threadpool
 	{
 	public:
-		threadpool(size_t size = std::thread::hardware_concurrency(), threadpool_state state = threadpool_state::running) :
+		threadpool(size_t size = std::thread::hardware_concurrency(),
+				   threadpool_state state = threadpool_state::running) :
 			_threadpool_size(size),
 			_threadpool_state(state)
 		{
@@ -464,9 +467,9 @@ namespace stp
 				else
 				{
 					auto it_b = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end(), it = it_b;
-					for (size_t n = 0; n < delta_size; ++it == it_e ? it = it_b, void() : void())
+					for (size_t n = 0; n < delta_size; ++it)
 					{
-						if (it->active)
+						if ((it != it_e ? it : it = it_b)->active)
 						{
 							it->active = false;
 
