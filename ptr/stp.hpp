@@ -8,7 +8,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.9.4 - Always allocates objects inside stp::task objects dynamically
+// SimpleThreadPools - version B.3.9.5 - Always allocates objects inside stp::task objects dynamically
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -599,8 +599,10 @@ namespace stp
 
 					threadpool_lock.lock();
 				}
-
-				_threadpool_condvar.wait(threadpool_lock);
+				else
+				{
+					_threadpool_condvar.wait(threadpool_lock);
+				}
 			}
 
 			if (bool(this_thread->inactive = !this_thread->active))
