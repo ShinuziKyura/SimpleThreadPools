@@ -9,7 +9,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.9.5 - Only allocates big objects inside stp::task objects dynamically
+// SimpleThreadPools - version B.3.10.0 - Only allocates big objects inside stp::task objects dynamically
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -62,28 +62,34 @@ namespace stp
 	public:
 		task<RetType, ParamTypes ...>() = default;
 		template <class ... AutoParamTypes, class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(* func)(AutoParamTypes ...), ArgTypes && ... args) :
+		task<RetType, ParamTypes ...>(RetType(* func)(AutoParamTypes ...),
+									  ArgTypes && ... args) :
 			_task_package(std::bind(func, _bind_forward<ArgTypes>(args) ...)),
 			_task_future(_task_package.get_future()),
 			_task_state(task_state::suspended)
 		{
 		}
 		template <class ObjType, class ... AutoParamTypes, class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(AutoParamTypes ...), ObjType * obj, ArgTypes && ... args) :
+		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(AutoParamTypes ...),
+									  ObjType * obj,
+									  ArgTypes && ... args) :
 			_task_package(std::bind(func, obj, _bind_forward<ArgTypes>(args) ...)),
 			_task_future(_task_package.get_future()),
 			_task_state(task_state::suspended)
 		{
 		}
 		template <class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(* func)(ParamTypes ...), ArgTypes && ... args) :
+		task<RetType, ParamTypes ...>(RetType(* func)(ParamTypes ...),
+									  ArgTypes && ... args) :
 			_task_package(std::bind(func, _bind_forward<ArgTypes>(args) ...)),
 			_task_future(_task_package.get_future()),
 			_task_state(task_state::suspended)
 		{
 		}
 		template <class ObjType, class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) :
+		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(ParamTypes ...),
+									  ObjType * obj,
+									  ArgTypes && ... args) :
 			_task_package(std::bind(func, obj, _bind_forward<ArgTypes>(args) ...)),
 			_task_future(_task_package.get_future()),
 			_task_state(task_state::suspended)
@@ -332,6 +338,9 @@ namespace stp
 	public:
 		threadpool(size_t size = std::thread::hardware_concurrency(),
 				   threadpool_state state = threadpool_state::running) :
+			_threadpool_minimum_priority(std::numeric_limits<int_fast8_t>::min()),
+			_threadpool_maximum_priority(std::numeric_limits<int_fast8_t>::max()),
+			_threadpool_default_priority(0),
 			_threadpool_size(size),
 			_threadpool_state(state)
 		{
@@ -426,16 +435,16 @@ namespace stp
 
 			return _threadpool_task_set.erase(&task);
 		}
-		void resize(size_t new_size)
+		void resize(size_t size)
 		{
-			if (_threadpool_size != new_size)
+			if (_threadpool_size != size)
 			{
 				std::scoped_lock<std::shared_mutex> lock(_threadpool_mutex);
-				size_t delta_size = std::max(_threadpool_size, new_size) - std::min(_threadpool_size, new_size);
+				size_t delta_size = std::max(_threadpool_size, size) - std::min(_threadpool_size, size);
 
-				if (_threadpool_size < new_size)
+				if (_threadpool_size < size)
 				{
-					auto it = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end();
+					auto it = std::begin(_threadpool_thread_list), it_e = std::end(_threadpool_thread_list);
 					for (size_t n = 0; n < delta_size; ++it)
 					{
 						if (it != it_e)
@@ -462,7 +471,7 @@ namespace stp
 				}
 				else
 				{
-					auto it_b = _threadpool_thread_list.begin(), it_e = _threadpool_thread_list.end(), it = it_b;
+					auto it_b = std::begin(_threadpool_thread_list), it_e = std::end(_threadpool_thread_list), it = it_b;
 					for (size_t n = 0; n < delta_size; ++it)
 					{
 						if ((it != it_e ? it : it = it_b)->active)
@@ -476,7 +485,7 @@ namespace stp
 					_threadpool_condvar.notify_all();
 				}
 
-				_threadpool_size = new_size;
+				_threadpool_size = size;
 			}
 		}
 		void run()
@@ -498,6 +507,14 @@ namespace stp
 
 				_threadpool_state = threadpool_state::stopped;
 			}
+		}
+		void redefault_priority(int_fast8_t default_priority)
+		{
+			_threadpool_default_priority = std::clamp(default_priority,
+													  std::min(_threadpool_minimum_priority,
+															   _threadpool_maximum_priority),
+													  std::max(_threadpool_minimum_priority,
+															   _threadpool_maximum_priority));
 		}
 		size_t size() const
 		{
@@ -604,9 +621,9 @@ namespace stp
 			}
 		}
 
-		int_fast8_t const _threadpool_minimum_priority{ std::numeric_limits<int_fast8_t>::min() };
-		int_fast8_t const _threadpool_maximum_priority{ std::numeric_limits<int_fast8_t>::max() };
-		int_fast8_t const _threadpool_default_priority{ 0 };
+		int_fast8_t const _threadpool_minimum_priority;
+		int_fast8_t const _threadpool_maximum_priority;
+		int_fast8_t _threadpool_default_priority;
 		size_t _threadpool_size;
 		threadpool_state _threadpool_state;
 		std::atomic<bool> _threadpool_task{ false };
