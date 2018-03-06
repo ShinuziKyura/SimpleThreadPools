@@ -9,7 +9,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.10.0 - Only allocates big objects inside stp::task objects dynamically
+// SimpleThreadPools - version B.3.10.1 - Allocates big objects dynamically and small objects statically inside stp::task
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -349,9 +349,9 @@ namespace stp
 				_threadpool_thread_list.emplace_back(this);
 			}
 		}
-		threadpool(int_fast8_t minimum_priority, 
-				   int_fast8_t maximum_priority, 
-				   int_fast8_t default_priority, 
+		threadpool(int_fast8_t minimum_priority,
+				   int_fast8_t maximum_priority,
+				   int_fast8_t default_priority,
 				   size_t size = std::thread::hardware_concurrency(),
 				   threadpool_state state = threadpool_state::running) :
 			_threadpool_minimum_priority(minimum_priority),
@@ -508,7 +508,7 @@ namespace stp
 				_threadpool_state = threadpool_state::stopped;
 			}
 		}
-		void redefault_priority(int_fast8_t default_priority)
+		void reset_priority(int_fast8_t default_priority)
 		{
 			_threadpool_default_priority = std::clamp(default_priority,
 													  std::min(_threadpool_minimum_priority,
