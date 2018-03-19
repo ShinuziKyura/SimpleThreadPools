@@ -8,7 +8,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.10.2 - Allocates objects dynamically inside stp::task
+// SimpleThreadPools - version B.3.10.3 - Allocates objects dynamically inside stp::task
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -57,6 +57,7 @@ namespace stp
 	class task
 	{
 		static_assert(!std::is_rvalue_reference<RetType>::value, "stp::task<T>: T may not be of rvalue-reference type");
+
 		using ResultType = std::conditional_t<!std::is_reference<RetType>::value, RetType, std::remove_reference_t<RetType> *>;
 	public:
 		task<RetType, ParamTypes ...>() = default;
@@ -565,11 +566,6 @@ namespace stp
 			{
 			}
 
-			bool operator==(_thread const & other) const
-			{
-				return thread.get_id() == other.thread.get_id();
-			}
-
 			_task task;
 			bool active{ true };
 			bool inactive{ false };
@@ -587,21 +583,19 @@ namespace stp
 				{
 					threadpool_lock.unlock();
 
+					if (_threadpool_task_mutex.lock(), _threadpool_task.load(std::memory_order_relaxed))
 					{
-						std::lock_guard<std::mutex> lock(_threadpool_task_mutex);
+						std::lock_guard<std::mutex> lock(_threadpool_task_mutex, std::adopt_lock);
 
-						if (_threadpool_task.load(std::memory_order_relaxed))
+						this_thread->task = std::move(_threadpool_task_queue.top());
+
+						valid = _threadpool_task_set.erase(this_thread->task.identity);
+
+						_threadpool_task_queue.pop();
+
+						if (_threadpool_task_queue.empty())
 						{
-							this_thread->task = std::move(_threadpool_task_queue.top());
-
-							valid = _threadpool_task_set.erase(this_thread->task.identity);
-
-							_threadpool_task_queue.pop();
-
-							if (_threadpool_task_queue.empty())
-							{
-								_threadpool_task.store(false, std::memory_order_release);
-							}
+							_threadpool_task.store(false, std::memory_order_release);
 						}
 					}
 

@@ -9,7 +9,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.10.2 - Allocates big objects dynamically and small objects statically inside stp::task
+// SimpleThreadPools - version B.3.10.3 - Allocates big objects dynamically and small objects statically inside stp::task
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -151,7 +151,7 @@ namespace stp
 
 			if (_task_result.type() == typeid(_exception_ptr))
 			{
-				std::rethrow_exception(std::any_cast<_exception_ptr>(_task_result).exception);
+				std::rethrow_exception(std::any_cast<_exception_ptr>(_task_result));
 			}
 
 			if constexpr (std::negation_v<std::is_same<RetType, void>>)
@@ -272,12 +272,17 @@ namespace stp
 	private:
 		struct _exception_ptr
 		{
-			_exception_ptr(std::exception_ptr exce) :
-				exception(exce)
+			_exception_ptr(std::exception_ptr && eptr) :
+				object(eptr)
 			{
 			}
 
-			std::exception_ptr exception;
+			operator std::exception_ptr()
+			{
+				return object;
+			}
+
+			std::exception_ptr object;
 		};
 
 		void _task_function(task_state state)
@@ -561,11 +566,6 @@ namespace stp
 			_thread(threadpool * threadpool) :
 				thread(&threadpool::_threadpool_function, threadpool, this)
 			{
-			}
-
-			bool operator==(_thread const & other) const
-			{
-				return thread.get_id() == other.thread.get_id();
 			}
 
 			_task task;
