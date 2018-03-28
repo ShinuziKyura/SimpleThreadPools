@@ -6,10 +6,13 @@
 
 // Compilation variables
 
-#define DYNAMIC_ALLOCATION 1
-#define	FILE_OUTPUT 0
+#define DYNAMIC_ALLOCATION 0
+#define	GENERATE_FILE 0
+#define TEST_SINGLE_THREAD 1
+#define TEST_MULTI_THREAD 1
+#define TEST_THREAD_POOL 1
 
-#if DYNAMIC_ALLOCATION
+#if (DYNAMIC_ALLOCATION)
 #include "../dyn/stp.hpp" // Standard revision required: C++14
 #else
 #include "../hyb/stp.hpp" // Standard revision required: C++17
@@ -34,7 +37,7 @@ long double generator(std::array<ARRAY_TYPE, ARRAY_SIZE> & array)
 	start_timer = std::chrono::steady_clock::now();
 	std::generate(std::begin(array), std::end(array), std::ref(rng));
 	stop_timer = std::chrono::steady_clock::now();
-	return std::chrono::duration<long double, std::nano>(stop_timer - start_timer).count();
+	return std::chrono::duration<long double>(stop_timer - start_timer).count();
 }
 
 long double sorter(std::array<ARRAY_TYPE, ARRAY_SIZE> & array)
@@ -60,7 +63,6 @@ long double single_thread_test()
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(generator, *array); });
 
 	//	Array generation
-
 	{
 		std::cout <<
 			"\tArray generation begin...\n\n";
@@ -77,20 +79,20 @@ long double single_thread_test()
 		std::cout <<
 			"\t\tTime elapsed per array:\n";
 
-		long double sum_result = 0.0;
+		long double total_time_sum = 0.0;
 
 		for (auto & task : tasks)
 		{
-			sum_result += task.get();
+			total_time_sum += task.get();
 			std::cout <<
 				"\t\t" << task.get() << " ns\n";
 		}
 
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
-			"\t\t" << sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
 			"\tTotal time elapsed:\n"
-			"\t" << sum_result << "s\n\n"
+			"\t" << total_time_sum << " ns\n\n"
 			"\tArray generation end\n\n";
 	}
 
@@ -99,7 +101,6 @@ long double single_thread_test()
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(sorter, *array); });
 
 	//	Array sorting
-
 	{
 		std::cout <<
 			"\tArray sorting begin...\n\n";
@@ -116,20 +117,20 @@ long double single_thread_test()
 		std::cout <<
 			"\t\tTime elapsed per array:\n";
 
-		long double sum_result = 0.0;
+		long double total_time_sum = 0.0;
 
 		for (auto & task : tasks)
 		{
-			sum_result += task.get();
+			total_time_sum += task.get();
 			std::cout <<
 				"\t\t" << task.get() << " ns\n";
 		}
 
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
-			"\t\t" << sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
 			"\tTotal time elapsed:\n"
-			"\t" << sum_result << "s\n\n"
+			"\t" << total_time_sum << " ns\n\n"
 			"\tArray sorting end\n\n";
 	}
 
@@ -147,7 +148,6 @@ long double multi_thread_test()
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(generator, *array); });
 
 	//	Array generation
-
 	{
 		std::cout <<
 			"\tArray generation begin...\n\n";
@@ -164,20 +164,20 @@ long double multi_thread_test()
 		std::cout <<
 			"\t\tTime elapsed per array:\n";
 
-		long double sum_result = 0.0;
+		long double total_time_sum = 0.0;
 
 		for (auto & task : tasks)
 		{
-			sum_result += task.get();
+			total_time_sum += task.get();
 			std::cout <<
 				"\t\t" << task.get() << " ns\n";
 		}
 
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
-			"\t\t" << sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
 			"\tTotal time elapsed:\n"
-			"\t" << sum_result / THREAD_AMOUNT << "s\n\n"
+			"\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
 			"\tArray generation end\n\n";
 	}
 
@@ -186,7 +186,6 @@ long double multi_thread_test()
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(sorter, *array); });
 
 	//	Array sorting
-
 	{
 		std::cout <<
 			"\tArray sorting begin...\n\n";
@@ -203,20 +202,20 @@ long double multi_thread_test()
 		std::cout <<
 			"\t\tTime elapsed per array:\n";
 
-		long double sum_result = 0.0;
+		long double total_time_sum = 0.0;
 
 		for (auto & task : tasks)
 		{
-			sum_result += task.get();
+			total_time_sum += task.get();
 			std::cout <<
 				"\t\t" << task.get() << " ns\n";
 		}
 
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
-			"\t\t" << sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
 			"\tTotal time elapsed:\n"
-			"\t" << sum_result / THREAD_AMOUNT << "s\n\n"
+			"\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
 			"\tArray sorting end\n\n";
 	}
 
@@ -236,7 +235,6 @@ long double thread_pool_test()
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(generator, *array); });
 
 	//	Array generation
-
 	{
 		std::cout <<
 			"\tArray generation begin...\n\n";
@@ -253,20 +251,20 @@ long double thread_pool_test()
 		std::cout <<
 			"\t\tTime elapsed per array:\n";
 
-		long double sum_result = 0.0;
+		long double total_time_sum = 0.0;
 
 		for (auto & task : tasks)
 		{
-			sum_result += task.get();
+			total_time_sum += task.get();
 			std::cout <<
 				"\t\t" << task.get() << " ns\n";
 		}
 
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
-			"\t\t" << sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
 			"\tTotal time elapsed:\n"
-			"\t" << sum_result / THREAD_AMOUNT << "s\n\n"
+			"\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
 			"\tArray generation end\n\n";
 	}
 
@@ -275,7 +273,6 @@ long double thread_pool_test()
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(sorter, *array); });
 
 	//	Array sorting
-
 	{
 		std::cout <<
 			"\tArray sorting begin...\n\n";
@@ -292,20 +289,20 @@ long double thread_pool_test()
 		std::cout <<
 			"\t\tTime elapsed per array:\n";
 
-		long double sum_result = 0.0;
+		long double total_time_sum = 0.0;
 
 		for (auto & task : tasks)
 		{
-			sum_result += task.get();
+			total_time_sum += task.get();
 			std::cout <<
 				"\t\t" << task.get() << " ns\n";
 		}
 
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
-			"\t\t" << sum_result / ARRAY_AMOUNT << " ns/array\n\n"
+			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
 			"\tTotal time elapsed:\n"
-			"\t" << sum_result / THREAD_AMOUNT << "s\n\n"
+			"\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
 			"\tArray sorting end\n\n";
 	}
 
@@ -317,27 +314,32 @@ long double thread_pool_test()
 int main()
 {
 	std::setvbuf(stdout, nullptr, _IOFBF, BUFSIZ);
-
 	std::ios_base::sync_with_stdio(false);
+	std::cout << std::scientific;
 
-	long double total_time = 0;
-
-#if (FILE_OUTPUT)
+#if (GENERATE_FILE)
 	std::fstream fout("./test/stp.tests", std::ios::out | std::ios::trunc);
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
 
-	std::cout << std::scientific <<
+	long double total_time = 0.0;
+
+#if (TEST_SINGLE_THREAD)
+	std::cout <<
 		"Single thread test begin...\n" << std::endl;
 
 	total_time = single_thread_test();
 
 	std::cout <<
 		"Total time locked:\n" <<
-		total_time << " ns\n\n"
+		total_time << " s\n\n"
 		"Single thread test end\n\n"
 		"======================\n" << std::endl;
 
+	total_time = 0.0;
+#endif
+
+#if (TEST_MULTI_THREAD)
 	std::cout <<
 		"Multi thread test begin...\n" << std::endl;
 
@@ -345,10 +347,14 @@ int main()
 
 	std::cout <<
 		"Total time locked:\n" <<
-		total_time << " ns\n\n"
+		total_time << " s\n\n"
 		"Multi thread test end\n\n"
 		"======================\n" << std::endl;
 
+	total_time = 0.0;
+#endif
+
+#if (TEST_THREAD_POOL)
 	std::cout <<
 		"Thread pool test begin...\n" << std::endl;
 
@@ -356,18 +362,19 @@ int main()
 
 	std::cout <<
 		"Total time locked:\n" <<
-		total_time << " ns\n\n"
+		total_time << " s\n\n"
 		"Thread pool test end\n\n"
 		"======================\n" << std::endl;
 
-#if (FILE_OUTPUT)
+	total_time = 0.0;
+#endif
+
+#if (GENERATE_FILE)
 	fout.close();
 	std::cout.rdbuf(cout_buffer);
 #endif
 
-	std::cout <<
-		"Press enter to exit..." << std::endl;
-
+	std::cout << "Press enter to exit..." << std::endl;
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
 	return 0;

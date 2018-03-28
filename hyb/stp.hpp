@@ -9,7 +9,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.3.10.3 - Allocates big objects dynamically and small objects statically inside stp::task
+// SimpleThreadPools - version B.3.10.4 - Allocates big objects dynamically and small objects statically inside stp::task
 namespace stp
 {
 	enum class task_error_code : uint_fast8_t
@@ -98,7 +98,7 @@ namespace stp
 		template <class ... MoveParamTypes>
 		task<RetType, ParamTypes ...>(task<RetType, MoveParamTypes ...> && other) // Move pseudo-constructor
 		{
-			switch (_task_state.load(std::memory_order_acquire))
+			switch (_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::waiting:
 				case task_state::running:
@@ -116,7 +116,7 @@ namespace stp
 		template <class ... MoveParamTypes>
 		task<RetType, ParamTypes ...> & operator=(task<RetType, MoveParamTypes ...> && other) // Move assignment pseudo-operator
 		{
-			switch (_task_state.load(std::memory_order_acquire))
+			switch (_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::waiting:
 				case task_state::running:
@@ -135,7 +135,7 @@ namespace stp
 		}
 		~task<RetType, ParamTypes ...>()
 		{
-			switch (_task_state.load(std::memory_order_acquire))
+			switch (_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::waiting:
 				case task_state::running:
@@ -168,7 +168,7 @@ namespace stp
 		}
 		void wait()
 		{
-			switch (_task_state.load(std::memory_order_acquire))
+			switch (_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::null:
 					throw task_error(task_error_code::no_state);
@@ -202,40 +202,42 @@ namespace stp
 				{
 					_task_result = std::make_any<_exception_ptr>(std::current_exception());
 				}
+
+				while(!ready());
 			}
 		}
 		template <class Rep, class Period>
-		task_state wait_for(std::chrono::duration<Rep, Period> const & timeout_duration)
+		task_state wait_for(std::chrono::duration<Rep, Period> const & duration)
 		{
-			return wait_until(std::chrono::steady_clock::now() + timeout_duration);
+			return wait_until(std::chrono::steady_clock::now() + duration);
 		}
 		template <class Clock, class Duration>
-		task_state wait_until(std::chrono::time_point<Clock, Duration> const & timeout_time)
+		task_state wait_until(std::chrono::time_point<Clock, Duration> const & time_point)
 		{
-			switch (_task_state.load(std::memory_order_acquire))
+			switch (_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::null:
 					throw task_error(task_error_code::no_state);
 				case task_state::waiting:
 				case task_state::running:
-					_task_future.wait_until(timeout_time);
+					_task_future.wait_until(time_point);
 				default:
 					break;
 			}
 
-			return _task_state.load(std::memory_order_acquire);
+			return _task_state.load(std::memory_order_relaxed);
 		}
 		task_state state() const
 		{
-			return _task_state.load(std::memory_order_acquire);
+			return _task_state.load(std::memory_order_relaxed);
 		}
 		bool ready() const
 		{
-			return _task_state.load(std::memory_order_acquire) == task_state::ready;
+			return _task_state.load(std::memory_order_relaxed) == task_state::ready;
 		}
 		void reset()
 		{
-			switch (_task_state.load(std::memory_order_acquire))
+			switch (_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::waiting:
 				case task_state::running:
@@ -272,8 +274,8 @@ namespace stp
 	private:
 		struct _exception_ptr
 		{
-			_exception_ptr(std::exception_ptr && eptr) :
-				object(eptr)
+			_exception_ptr(std::exception_ptr && excptr) :
+				object(excptr)
 			{
 			}
 
@@ -287,26 +289,26 @@ namespace stp
 
 		void _task_function(task_state state)
 		{
-			_task_state.store(state, std::memory_order_release);
+			_task_state.store(state, std::memory_order_relaxed);
 
 			if (state == task_state::running)
 			{
 				_task_package();
 
-				_task_state.store(task_state::ready, std::memory_order_release);
+				_task_state.store(task_state::ready, std::memory_order_relaxed);
 			}
 		}
 
 		template <class ValueType>
-		static auto _bind_forward(std::remove_reference_t<ValueType> & arg)
+		static auto _bind_forward(std::remove_reference_t<ValueType> & val)
 		{
 			if constexpr (std::is_lvalue_reference_v<ValueType>)
 			{
-				return std::ref(arg);
+				return std::ref(val);
 			}
 			else
 			{
-				return std::bind(std::move<ValueType &>, std::ref(arg));
+				return std::bind(std::move<ValueType &>, std::ref(val));
 			}
 		}
 
@@ -429,7 +431,7 @@ namespace stp
 
 			_threadpool_task_set.insert(&task);
 
-			_threadpool_task.store(true, std::memory_order_release);
+			_threadpool_task.store(true, std::memory_order_relaxed);
 
 			_threadpool_condvar.notify_one();
 		}
@@ -544,10 +546,10 @@ namespace stp
 	private:
 		struct _task
 		{
-			_task(std::function<void(task_state)> && func = nullptr, void * iden = nullptr, uint_fast8_t prio = 0) :
+			_task(std::function<void(task_state)> && func = nullptr, void * id = nullptr, uint_fast8_t prty = 0) :
 				function(func),
-				identity(iden),
-				priority(prio)
+				identity(id),
+				priority(prty)
 			{
 			}
 
@@ -563,8 +565,8 @@ namespace stp
 		};
 		struct _thread
 		{
-			_thread(threadpool * threadpool) :
-				thread(&threadpool::_threadpool_function, threadpool, this)
+			_thread(threadpool * thrdpool) :
+				thread(&threadpool::_threadpool_function, thrdpool, this)
 			{
 			}
 
@@ -581,7 +583,7 @@ namespace stp
 
 			while (_threadpool_state != threadpool_state::terminating && this_thread->active)
 			{
-				if (_threadpool_state == threadpool_state::running && _threadpool_task.load(std::memory_order_acquire))
+				if (_threadpool_state == threadpool_state::running && _threadpool_task.load(std::memory_order_relaxed))
 				{
 					threadpool_lock.unlock();
 
@@ -596,7 +598,7 @@ namespace stp
 
 						if (_threadpool_task_queue.empty())
 						{
-							_threadpool_task.store(false, std::memory_order_release);
+							_threadpool_task.store(false, std::memory_order_relaxed);
 						}
 					}
 
