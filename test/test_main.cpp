@@ -6,7 +6,7 @@
 
 // Compilation variables
 
-#define DYNAMIC_ALLOCATION 0
+#define DYNAMIC_ALLOCATION 1
 #define	GENERATE_FILE 0
 #define TEST_SINGLE_THREAD 1
 #define TEST_MULTI_THREAD 1

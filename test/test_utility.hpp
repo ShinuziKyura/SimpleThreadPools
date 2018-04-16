@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <random>
 
-// Simplified version of my stdx::randint_generator
+// TODO Overhaul this class
 
 template <class IntType = int>
 class random_generator
