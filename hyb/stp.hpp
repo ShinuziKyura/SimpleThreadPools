@@ -229,11 +229,11 @@ namespace stp
 		}
 		task_state state() const
 		{
-			return _task_state.load(std::memory_order_relaxed);
+			return _task_state.load(std::memory_order_acquire);
 		}
 		bool ready() const
 		{
-			return _task_state.load(std::memory_order_relaxed) == task_state::ready;
+			return _task_state.load(std::memory_order_acquire) == task_state::ready;
 		}
 		void reset()
 		{
@@ -274,8 +274,8 @@ namespace stp
 	private:
 		struct _exception_ptr
 		{
-			_exception_ptr(std::exception_ptr && excptr) :
-				object(excptr)
+			_exception_ptr(std::exception_ptr && eptr) :
+				object(eptr)
 			{
 			}
 
@@ -295,7 +295,7 @@ namespace stp
 			{
 				_task_package();
 
-				_task_state.store(task_state::ready, std::memory_order_relaxed);
+				_task_state.store(task_state::ready, std::memory_order_release);
 			}
 		}
 
@@ -565,8 +565,8 @@ namespace stp
 		};
 		struct _thread
 		{
-			_thread(threadpool * thrdpool) :
-				thread(&threadpool::_threadpool_function, thrdpool, this)
+			_thread(threadpool * threadpool) :
+				thread(&threadpool::_threadpool_function, threadpool, this)
 			{
 			}
 
