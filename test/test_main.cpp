@@ -4,19 +4,14 @@
 
 #include "test_utility.hpp"
 
+#include "../new/stp.hpp" // Standard revision required: C++17
+
 // Compilation variables
 
-#define DYNAMIC_ALLOCATION 1
 #define	GENERATE_FILE 0
 #define TEST_SINGLE_THREAD 1
 #define TEST_MULTI_THREAD 1
 #define TEST_THREAD_POOL 1
-
-#if (DYNAMIC_ALLOCATION)
-#include "../dyn/stp.hpp" // Standard revision required: C++14
-#else
-#include "../hyb/stp.hpp" // Standard revision required: C++17
-#endif
 
 // Test variables
 
@@ -54,14 +49,14 @@ long double single_thread_test()
 {
 	std::array<stp::task<long double>, ARRAY_AMOUNT> tasks;
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
-
+	
 	long double total_time = 0;
 
 	std::chrono::steady_clock::time_point start_single_timer, stop_single_timer;
 
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(generator, *array); });
-
+	
 	//	Array generation
 	{
 		std::cout <<
@@ -73,7 +68,7 @@ long double single_thread_test()
 		{
 			task();
 		}
-
+		
 		stop_single_timer = std::chrono::steady_clock::now();
 
 		std::cout <<
@@ -91,8 +86,8 @@ long double single_thread_test()
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
 			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
-			"\tTotal time elapsed:\n"
-			"\t" << total_time_sum << " ns\n\n"
+			"\t\tTotal time elapsed:\n"
+			"\t\t" << total_time_sum << " ns\n\n"
 			"\tArray generation end\n\n";
 	}
 
@@ -129,8 +124,8 @@ long double single_thread_test()
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
 			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
-			"\tTotal time elapsed:\n"
-			"\t" << total_time_sum << " ns\n\n"
+			"\t\tTotal time elapsed:\n"
+			"\t\t" << total_time_sum << " ns\n\n"
 			"\tArray sorting end\n\n";
 	}
 
@@ -140,12 +135,14 @@ long double single_thread_test()
 long double multi_thread_test()
 {
 	std::array<stp::task<long double>, ARRAY_AMOUNT> tasks;
+	std::array<std::packaged_task<void()>, ARRAY_AMOUNT> functions;
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 
 	long double total_time = 0;
 
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(generator, *array); });
+	std::transform(std::begin(tasks), std::end(tasks), std::begin(functions), [] (auto & task) { return task.function(); });
 
 	//	Array generation
 	{
@@ -154,9 +151,9 @@ long double multi_thread_test()
 
 		start_timer = std::chrono::steady_clock::now();
 
-		for (auto & task : tasks)
+		for (auto & function : functions)
 		{
-			std::thread(&stp::task<long double>::operator(), &task).detach();
+			std::thread(&std::packaged_task<void()>::operator(), &function).detach();
 		}
 
 		stop_timer = std::chrono::steady_clock::now();
@@ -176,14 +173,15 @@ long double multi_thread_test()
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
 			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
-			"\tTotal time elapsed:\n"
-			"\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
+			"\t\tTotal time elapsed:\n"
+			"\t\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
 			"\tArray generation end\n\n";
 	}
 
 	total_time += std::chrono::duration<long double>(stop_timer - start_timer).count();
 
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(sorter, *array); });
+	std::transform(std::begin(tasks), std::end(tasks), std::begin(functions), [] (auto & task) { return task.function(); });
 
 	//	Array sorting
 	{
@@ -192,9 +190,9 @@ long double multi_thread_test()
 
 		start_timer = std::chrono::steady_clock::now();
 
-		for (auto & task : tasks)
+		for (auto & function : functions)
 		{
-			std::thread(&stp::task<long double>::operator(), &task).detach();
+			std::thread(&std::packaged_task<void()>::operator(), &function).detach();
 		}
 
 		stop_timer = std::chrono::steady_clock::now();
@@ -214,8 +212,8 @@ long double multi_thread_test()
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
 			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
-			"\tTotal time elapsed:\n"
-			"\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
+			"\t\tTotal time elapsed:\n"
+			"\t\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
 			"\tArray sorting end\n\n";
 	}
 
@@ -243,7 +241,7 @@ long double thread_pool_test()
 
 		for (auto & task : tasks)
 		{
-			threadpool.push(task);
+			threadpool.execute(task);
 		}
 
 		stop_timer = std::chrono::steady_clock::now();
@@ -263,8 +261,8 @@ long double thread_pool_test()
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
 			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
-			"\tTotal time elapsed:\n"
-			"\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
+			"\t\tTotal time elapsed:\n"
+			"\t\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
 			"\tArray generation end\n\n";
 	}
 
@@ -281,7 +279,7 @@ long double thread_pool_test()
 
 		for (auto & task : tasks)
 		{
-			threadpool.push(task);
+			threadpool.execute(task);
 		}
 
 		stop_timer = std::chrono::steady_clock::now();
@@ -301,8 +299,8 @@ long double thread_pool_test()
 		std::cout <<
 			"\n\t\tAverage time elapsed per array:\n"
 			"\t\t" << total_time_sum / ARRAY_AMOUNT << " ns/array\n\n"
-			"\tTotal time elapsed:\n"
-			"\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
+			"\t\tTotal time elapsed:\n"
+			"\t\t" << total_time_sum / THREAD_AMOUNT << " ns\n\n"
 			"\tArray sorting end\n\n";
 	}
 
@@ -313,7 +311,7 @@ long double thread_pool_test()
 
 int main()
 {
-	std::setvbuf(stdout, nullptr, _IOFBF, BUFSIZ);
+	std::setvbuf(stdout, nullptr, _IOFBF, 2048);
 	std::ios_base::sync_with_stdio(false);
 	std::cout << std::scientific;
 
@@ -326,22 +324,22 @@ int main()
 
 #if (TEST_SINGLE_THREAD)
 	std::cout <<
-		"Single thread test begin...\n" << std::endl;
+		"Single thread test begin...\n\n";
 
 	total_time = single_thread_test();
-
+	
 	std::cout <<
 		"Total time locked:\n" <<
 		total_time << " s\n\n"
 		"Single thread test end\n\n"
 		"======================\n" << std::endl;
-
+	
 	total_time = 0.0;
 #endif
 
 #if (TEST_MULTI_THREAD)
 	std::cout <<
-		"Multi thread test begin...\n" << std::endl;
+		"Multi thread test begin...\n\n";
 
 	total_time = multi_thread_test();
 
@@ -356,7 +354,7 @@ int main()
 
 #if (TEST_THREAD_POOL)
 	std::cout <<
-		"Thread pool test begin...\n" << std::endl;
+		"Thread pool test begin...\n\n";
 
 	total_time = thread_pool_test();
 
