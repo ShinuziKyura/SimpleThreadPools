@@ -7,7 +7,7 @@
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.4.1.0
+// SimpleThreadPools - version B.4.1.1
 namespace stp
 {
 	enum class task_error_code : uint_least8_t
@@ -183,6 +183,14 @@ namespace stp
 			_task_future = std::exchange(other._task_future, std::future<void>());
 			_task_state.store(other._task_state.exchange(task_state::null, std::memory_order_release), std::memory_order_release);
 		}
+		void _function()
+		{
+			_task_state.store(task_state::running, std::memory_order_relaxed);
+
+			_task_package();
+
+			_task_state.store(task_state::ready, std::memory_order_release);
+		}
 		void _reset()
 		{
 			switch (_task_state.load(std::memory_order_acquire))
@@ -200,14 +208,6 @@ namespace stp
 				_task_future = std::future<void>();
 				_task_state.store(task_state::suspended, std::memory_order_release);
 			}
-		}
-		void _function()
-		{
-			_task_state.store(task_state::running, std::memory_order_release);
-
-			_task_package();
-
-			_task_state.store(task_state::ready, std::memory_order_release);
 		}
 
 		template <class ValueType>
@@ -231,7 +231,8 @@ namespace stp
 	template <class RetType, class ... ParamTypes>
 	class task : public _task<RetType>
 	{
-		static_assert(std::is_default_constructible_v<RetType>, "stp::task<T>: T must satisfy the requirements of DefaultConstructible");
+		static_assert(std::disjunction_v<std::is_default_constructible<RetType>, std::is_reference<RetType>>, "stp::task<T>: T must satisfy the requirements of DefaultConstructible");
+		static_assert(std::disjunction_v<std::is_move_assignable<RetType>, std::is_reference<RetType>>, "stp::task<T>: T must satisfy the requirements of MoveAssignable");
 		static_assert(std::negation_v<std::is_rvalue_reference<RetType>>, "stp::task<T>: T may not be a rvalue-reference");
 
 		using ResultType = std::conditional_t<std::negation_v<std::is_reference<RetType>>, RetType, std::remove_reference_t<RetType> *>;
@@ -257,14 +258,14 @@ namespace stp
 			_task<RetType>(func, obj, std::forward<ArgTypes>(args) ...)
 		{
 		}
-		template <class ... AnyParamTypes, std::enable_if_t<std::is_move_assignable_v<ResultType>, int> = 0>
+		template <class ... AnyParamTypes>
 		task<RetType, ParamTypes ...>(task<RetType, AnyParamTypes ...> && other) // Move pseudo-constructor
 		{
 			this->_move(static_cast<_task<RetType> &&>(other));
 
 			_task_result = std::move(other._task_result);
 		}
-		template <class ... AnyParamTypes, std::enable_if_t<std::is_move_assignable_v<ResultType>, int> = 0>
+		template <class ... AnyParamTypes>
 		task<RetType, ParamTypes ...> & operator=(task<RetType, AnyParamTypes ...> && other) // Move assignment operator
 		{
 			this->_exchange(static_cast<_task<RetType> &&>(other));
@@ -298,7 +299,7 @@ namespace stp
 					}
 					else
 					{
-						_task_result = &this->_task_package.get_future().get();
+						_task_result = std::addressof(this->_task_package.get_future().get());
 					}
 				}
 				catch (...)

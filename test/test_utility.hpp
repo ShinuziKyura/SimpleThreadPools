@@ -12,10 +12,10 @@ class random_generator
 	static_assert(std::is_integral_v<IntType>, "std::random_generator<T>: T must be a integral type");
 public:
 	random_generator<IntType>() :
-		_seeds(std::transform(std::begin(_data), std::end(_data), std::begin(_data), [] (auto &) { return std::chrono::duration_cast<
+		_seed(std::transform(std::begin(_data), std::end(_data), std::begin(_data), [] (auto &) { return std::chrono::duration_cast<
 							  std::chrono::template duration<std::mt19937_64::result_type, std::nano>
 		>(std::chrono::steady_clock::now().time_since_epoch()).count(); }), std::end(_data)),
-		_engine(_seeds),
+		_engine(_seed),
 		_numbers(0, std::numeric_limits<IntType>::max())
 	{
 	}
@@ -26,7 +26,7 @@ public:
 	}
 private:
 	std::array<std::mt19937_64::result_type, std::mt19937_64::state_size> _data;
-	std::seed_seq _seeds;
+	std::seed_seq _seed;
 	std::mt19937_64 _engine;
 	std::uniform_int_distribution<IntType> _numbers;
 };

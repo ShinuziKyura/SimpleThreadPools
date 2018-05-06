@@ -320,7 +320,7 @@ int main()
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
 
-	long double total_time = 0.0;
+	[[maybe_unused]] long double total_time = 0.0;
 
 #if (TEST_SINGLE_THREAD)
 	std::cout <<
