@@ -15,9 +15,9 @@
 
 // Test variables
 
-using				ARRAY_TYPE			= uint_least64_t;
+using				ARRAY_TYPE			= uint_least32_t;
 constexpr size_t	ARRAY_SIZE			= 1000000;
-constexpr size_t	ARRAY_AMOUNT		= 16;
+constexpr size_t	ARRAY_AMOUNT		= 8;
 constexpr size_t	THREAD_AMOUNT		= 8;
 
 // Test utilities

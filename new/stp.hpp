@@ -1,14 +1,14 @@
 #ifndef SIMPLE_THREAD_POOLS_HPP
 #define SIMPLE_THREAD_POOLS_HPP
 
+#include <optional>
 #include <list>
 #include <queue>
 #include <functional>
 #include <future>
 #include <shared_mutex>
 
-// SimpleThreadPools - version B.4.1.1
-namespace stp
+namespace stp // SimpleThreadPools - version B.4.1.2
 {
 	enum class task_error_code : uint_least8_t
 	{
@@ -231,11 +231,10 @@ namespace stp
 	template <class RetType, class ... ParamTypes>
 	class task : public _task<RetType>
 	{
-		static_assert(std::disjunction_v<std::is_default_constructible<RetType>, std::is_reference<RetType>>, "stp::task<T>: T must satisfy the requirements of DefaultConstructible");
-		static_assert(std::disjunction_v<std::is_move_assignable<RetType>, std::is_reference<RetType>>, "stp::task<T>: T must satisfy the requirements of MoveAssignable");
-		static_assert(std::negation_v<std::is_rvalue_reference<RetType>>, "stp::task<T>: T may not be a rvalue-reference");
+		static_assert(std::negation_v<std::is_rvalue_reference<RetType>>, "stp::task<T>: T cannot be a rvalue-reference");
+		static_assert(std::negation_v<std::is_array<RetType>>, "stp::task<T>: T cannot be an array type");
 
-		using ResultType = std::conditional_t<std::negation_v<std::is_reference<RetType>>, RetType, std::remove_reference_t<RetType> *>;
+		using ResultType = std::optional<std::conditional_t<std::negation_v<std::is_reference<RetType>>, RetType, std::reference_wrapper<std::remove_reference_t<RetType>>>>;
 	public:
 		task<RetType, ParamTypes ...>() = default;
 		template <class ... ArgTypes>
@@ -293,14 +292,7 @@ namespace stp
 
 				try
 				{
-					if constexpr (std::negation_v<std::is_reference<RetType>>)
-					{
-						_task_result = std::move(this->_task_package.get_future().get());
-					}
-					else
-					{
-						_task_result = std::addressof(this->_task_package.get_future().get());
-					}
+					_task_result.emplace(std::forward<RetType>(this->_task_package.get_future().get()));
 				}
 				catch (...)
 				{
@@ -310,20 +302,13 @@ namespace stp
 				}
 			}
 
-			if constexpr (std::negation_v<std::is_reference<RetType>>)
-			{
-				return _task_result;
-			}
-			else
-			{
-				return *_task_result;
-			}
+			return _task_result.value();
 		}
 		void reset()
 		{
 			this->_reset();
 
-			_task_result = std::move(ResultType());
+			_task_result.reset();
 		}
 	private:
 		ResultType _task_result;
