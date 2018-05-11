@@ -8,7 +8,7 @@
 #include <future>
 #include <shared_mutex>
 
-namespace stp // SimpleThreadPools - version B.4.1.2
+namespace stp // SimpleThreadPools - version B.4.2.0
 {
 	enum class task_error_code : uint_least8_t
 	{
@@ -56,20 +56,20 @@ namespace stp // SimpleThreadPools - version B.4.1.2
 	class _task
 	{
 	protected:
-		_task<RetType>() = default;
+		_task() = default;
 		template <class ... ParamTypes, class ... ArgTypes>
-		_task<RetType>(RetType(* func)(ParamTypes ...), ArgTypes && ... args) :
+		_task(RetType(* func)(ParamTypes ...), ArgTypes && ... args) :
 			_task_package(std::bind(func, _bind_forward<ArgTypes>(args) ...)),
 			_task_state(task_state::suspended)
 		{
 		}
 		template <class ObjType, class ... ParamTypes, class ... ArgTypes>
-		_task<RetType>(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) :
+		_task(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) :
 			_task_package(std::bind(func, obj, _bind_forward<ArgTypes>(args) ...)),
 			_task_state(task_state::suspended)
 		{
 		}
-		~_task<RetType>()
+		~_task()
 		{
 			switch (_task_state.load(std::memory_order_acquire))
 			{
@@ -228,44 +228,47 @@ namespace stp // SimpleThreadPools - version B.4.1.2
 		std::atomic<task_state> _task_state{ task_state::null };
 	};
 
+	template <class>
+	class task;
+
 	template <class RetType, class ... ParamTypes>
-	class task : public _task<RetType>
+	class task<RetType(ParamTypes ...)> : public _task<RetType>
 	{
 		static_assert(std::negation_v<std::is_rvalue_reference<RetType>>, "stp::task<T>: T cannot be a rvalue-reference");
 		static_assert(std::negation_v<std::is_array<RetType>>, "stp::task<T>: T cannot be an array type");
 
 		using ResultType = std::optional<std::conditional_t<std::negation_v<std::is_reference<RetType>>, RetType, std::reference_wrapper<std::remove_reference_t<RetType>>>>;
 	public:
-		task<RetType, ParamTypes ...>() = default;
+		task() = default;
 		template <class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(* func)(ParamTypes ...), ArgTypes && ... args) : 
+		task(RetType(* func)(ParamTypes ...), ArgTypes && ... args) :
 			_task<RetType>(func, std::forward<ArgTypes>(args) ...)
 		{
 		}
 		template <class ObjType, class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) : 
+		task(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) :
 			_task<RetType>(func, obj, std::forward<ArgTypes>(args) ...)
 		{
 		}
 		template <class ... AutoParamTypes, class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(* func)(AutoParamTypes ...), ArgTypes && ... args) : 
+		task(RetType(* func)(AutoParamTypes ...), ArgTypes && ... args) :
 			_task<RetType>(func, std::forward<ArgTypes>(args) ...)
 		{
 		}
 		template <class ObjType, class ... AutoParamTypes, class ... ArgTypes>
-		task<RetType, ParamTypes ...>(RetType(ObjType::* func)(AutoParamTypes ...), ObjType * obj, ArgTypes && ... args) : 
+		task(RetType(ObjType::* func)(AutoParamTypes ...), ObjType * obj, ArgTypes && ... args) :
 			_task<RetType>(func, obj, std::forward<ArgTypes>(args) ...)
 		{
 		}
 		template <class ... AnyParamTypes>
-		task<RetType, ParamTypes ...>(task<RetType, AnyParamTypes ...> && other) // Move pseudo-constructor
+		task(task<RetType(AnyParamTypes ...)> && other) // Move pseudo-constructor
 		{
 			this->_move(static_cast<_task<RetType> &&>(other));
 
 			_task_result = std::move(other._task_result);
 		}
 		template <class ... AnyParamTypes>
-		task<RetType, ParamTypes ...> & operator=(task<RetType, AnyParamTypes ...> && other) // Move assignment operator
+		task & operator=(task<RetType(AnyParamTypes ...)> && other) // Move assignment operator
 		{
 			this->_exchange(static_cast<_task<RetType> &&>(other));
 
@@ -313,42 +316,42 @@ namespace stp // SimpleThreadPools - version B.4.1.2
 	private:
 		ResultType _task_result;
 
-		template <class AnyRetType, class ... AnyParamTypes>
+		template <class>
 		friend class task;
 	};
 
 	template <class ... ParamTypes>
-	class task<void, ParamTypes ...> : public _task<void>
+	class task<void(ParamTypes ...)> : public _task<void>
 	{
 	public:
-		task<void, ParamTypes ...>() = default;
+		task() = default;
 		template <class ... ArgTypes>
-		task<void, ParamTypes ...>(void(* func)(ParamTypes ...), ArgTypes && ... args) : 
+		task(void(* func)(ParamTypes ...), ArgTypes && ... args) :
 			_task<void>(func, std::forward<ArgTypes>(args) ...)
 		{
 		}
 		template <class ObjType, class ... ArgTypes>
-		task<void, ParamTypes ...>(void(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) : 
+		task(void(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args) :
 			_task<void>(func, obj, std::forward<ArgTypes>(args) ...)
 		{
 		}
 		template <class ... AutoParamTypes, class ... ArgTypes>
-		task<void, ParamTypes ...>(void(* func)(AutoParamTypes ...), ArgTypes && ... args) : 
+		task(void(* func)(AutoParamTypes ...), ArgTypes && ... args) :
 			_task<void>(func, std::forward<ArgTypes>(args) ...)
 		{
 		}
 		template <class ObjType, class ... AutoParamTypes, class ... ArgTypes>
-		task<void, ParamTypes ...>(void(ObjType::* func)(AutoParamTypes ...), ObjType * obj, ArgTypes && ... args) : 
+		task(void(ObjType::* func)(AutoParamTypes ...), ObjType * obj, ArgTypes && ... args) :
 			_task<void>(func, obj, std::forward<ArgTypes>(args) ...)
 		{
 		}
 		template <class ... AnyParamTypes>
-		task<void, ParamTypes ...>(task<void, AnyParamTypes ...> && other) // Move pseudo-constructor 
+		task(task<void(AnyParamTypes ...)> && other) // Move pseudo-constructor 
 		{
 			this->_move(static_cast<_task<void> &&>(other));
 		}
 		template <class ... AnyParamTypes>
-		task<void, ParamTypes ...> & operator=(task<void, AnyParamTypes ...> && other) // Move assignment operator
+		task & operator=(task<void(AnyParamTypes ...)> && other) // Move assignment operator
 		{
 			this->_exchange(static_cast<_task<void> &&>(other));
 
@@ -388,19 +391,24 @@ namespace stp // SimpleThreadPools - version B.4.1.2
 			this->_reset();
 		}
 
-		template <class AnyRetType, class ... AnyParamTypes>
+		template <class>
 		friend class task;
 	};
 
 	template <class RetType, class ... ParamTypes, class ... ArgTypes>
-	inline task<RetType> make_task(RetType(* func)(ParamTypes ...), ArgTypes && ... args) // Allows disambiguation of function overload by specifying the parameters' types
+	task(RetType(*)(ParamTypes ...), ArgTypes ...) -> task<RetType()>;
+	template <class RetType, class ObjType, class ... ParamTypes, class ... ArgTypes>
+	task(RetType(ObjType::*)(ParamTypes ...), ObjType *, ArgTypes ...) -> task<RetType()>;
+
+	template <class RetType, class ... ParamTypes, class ... ArgTypes>
+	inline task<RetType()> make_task(RetType(* func)(ParamTypes ...), ArgTypes && ... args) // Allows disambiguation of function overload by specifying the parameters' types
 	{
-		return task<RetType>(func, std::forward<ArgTypes>(args) ...);
+		return task<RetType()>(func, std::forward<ArgTypes>(args) ...);
 	}
 	template <class RetType, class ... ParamTypes, class ObjType, class ... ArgTypes>
-	inline task<RetType> make_task(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args)
+	inline task<RetType()> make_task(RetType(ObjType::* func)(ParamTypes ...), ObjType * obj, ArgTypes && ... args)
 	{
-		return task<RetType>(func, obj, std::forward<ArgTypes>(args) ...);
+		return task<RetType()>(func, obj, std::forward<ArgTypes>(args) ...);
 	}
 
 	enum class threadpool_state : uint_least8_t
@@ -462,12 +470,12 @@ namespace stp // SimpleThreadPools - version B.4.1.2
 		}
 
 		template <class RetType, class ... ParamTypes>
-		void execute(task<RetType, ParamTypes ...> & task)
+		void execute(task<RetType(ParamTypes ...)> & task)
 		{
 			execute(task, _threadpool_default_priority);
 		}
 		template <class RetType, class ... ParamTypes>
-		void execute(task<RetType, ParamTypes ...> & task, int_least8_t priority)
+		void execute(task<RetType(ParamTypes ...)> & task, int_least8_t priority)
 		{
 			auto function = task.function();
 

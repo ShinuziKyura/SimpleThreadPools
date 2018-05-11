@@ -47,7 +47,7 @@ long double sorter(std::array<ARRAY_TYPE, ARRAY_SIZE> & array)
 
 long double single_thread_test()
 {
-	std::array<stp::task<long double>, ARRAY_AMOUNT> tasks;
+	std::array<stp::task<long double()>, ARRAY_AMOUNT> tasks;
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 	
 	long double total_time = 0;
@@ -55,7 +55,7 @@ long double single_thread_test()
 	std::chrono::steady_clock::time_point start_single_timer, stop_single_timer;
 
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
-	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(generator, *array); });
+	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::task(generator, *array); });
 	
 	//	Array generation
 	{
@@ -93,7 +93,7 @@ long double single_thread_test()
 
 	total_time += std::chrono::duration<long double>(stop_single_timer - start_single_timer).count();
 
-	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(sorter, *array); });
+	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::task(sorter, *array); });
 
 	//	Array sorting
 	{
@@ -134,14 +134,14 @@ long double single_thread_test()
 
 long double multi_thread_test()
 {
-	std::array<stp::task<long double>, ARRAY_AMOUNT> tasks;
+	std::array<stp::task<long double()>, ARRAY_AMOUNT> tasks;
 	std::array<std::packaged_task<void()>, ARRAY_AMOUNT> functions;
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 
 	long double total_time = 0;
 
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
-	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(generator, *array); });
+	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::task(generator, *array); });
 	std::transform(std::begin(tasks), std::end(tasks), std::begin(functions), [] (auto & task) { return task.function(); });
 
 	//	Array generation
@@ -180,7 +180,7 @@ long double multi_thread_test()
 
 	total_time += std::chrono::duration<long double>(stop_timer - start_timer).count();
 
-	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(sorter, *array); });
+	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::task(sorter, *array); });
 	std::transform(std::begin(tasks), std::end(tasks), std::begin(functions), [] (auto & task) { return task.function(); });
 
 	//	Array sorting
@@ -224,13 +224,13 @@ long double thread_pool_test()
 {
 	stp::threadpool threadpool(THREAD_AMOUNT);
 
-	std::array<stp::task<long double>, ARRAY_AMOUNT> tasks;
+	std::array<stp::task<long double()>, ARRAY_AMOUNT> tasks;
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 
 	long double total_time = 0;
 
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
-	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(generator, *array); });
+	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::task(generator, *array); });
 
 	//	Array generation
 	{
@@ -268,7 +268,7 @@ long double thread_pool_test()
 
 	total_time += std::chrono::duration<long double>(stop_timer - start_timer).count();
 
-	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::make_task(sorter, *array); });
+	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::task(sorter, *array); });
 
 	//	Array sorting
 	{
@@ -372,7 +372,7 @@ int main()
 	std::cout.rdbuf(cout_buffer);
 #endif
 
-	std::cout << "Press enter to exit..." << std::endl;
+	std::cout << "Press \"Enter\" to exit..." << std::endl;
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
 	return 0;
