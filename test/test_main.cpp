@@ -4,7 +4,7 @@
 
 #include "test_utility.hpp"
 
-#include "../new/stp.hpp" // Standard revision required: C++17
+#include "../lib/stp.hpp" // Standard revision required: C++17
 
 // Compilation variables
 
@@ -223,7 +223,7 @@ long double multi_thread_test()
 long double thread_pool_test()
 {
 	stp::threadpool threadpool(THREAD_AMOUNT);
-
+	
 	std::array<stp::task<long double()>, ARRAY_AMOUNT> tasks;
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 

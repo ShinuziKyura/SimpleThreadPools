@@ -1,2 +1,2 @@
-*.exe
-stp.*.hpp
+x64/
+*.vcxproj*
