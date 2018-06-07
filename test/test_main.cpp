@@ -135,14 +135,12 @@ long double single_thread_test()
 long double multi_thread_test()
 {
 	std::array<stp::task<long double()>, ARRAY_AMOUNT> tasks;
-	std::array<std::packaged_task<void()>, ARRAY_AMOUNT> functions;
 	std::array<std::unique_ptr<std::array<ARRAY_TYPE, ARRAY_SIZE>>, ARRAY_AMOUNT> arrays;
 
 	long double total_time = 0;
 
 	std::generate(std::begin(arrays), std::end(arrays), std::make_unique<std::array<ARRAY_TYPE, ARRAY_SIZE>>);
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::task(generator, *array); });
-	std::transform(std::begin(tasks), std::end(tasks), std::begin(functions), [] (auto & task) { return task.function(); });
 
 	//	Array generation
 	{
@@ -151,9 +149,9 @@ long double multi_thread_test()
 
 		start_timer = std::chrono::steady_clock::now();
 
-		for (auto & function : functions)
+		for (auto & task : tasks)
 		{
-			std::thread(&std::packaged_task<void()>::operator(), &function).detach();
+			std::thread(&stp::task<long double()>::operator(), &task).detach();
 		}
 
 		stop_timer = std::chrono::steady_clock::now();
@@ -181,7 +179,6 @@ long double multi_thread_test()
 	total_time += std::chrono::duration<long double>(stop_timer - start_timer).count();
 
 	std::transform(std::begin(arrays), std::end(arrays), std::begin(tasks), [] (auto & array) { return stp::task(sorter, *array); });
-	std::transform(std::begin(tasks), std::end(tasks), std::begin(functions), [] (auto & task) { return task.function(); });
 
 	//	Array sorting
 	{
@@ -190,9 +187,9 @@ long double multi_thread_test()
 
 		start_timer = std::chrono::steady_clock::now();
 
-		for (auto & function : functions)
+		for (auto & task : tasks)
 		{
-			std::thread(&std::packaged_task<void()>::operator(), &function).detach();
+			std::thread(&stp::task<long double()>::operator(), &task).detach();
 		}
 
 		stop_timer = std::chrono::steady_clock::now();

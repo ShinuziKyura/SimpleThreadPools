@@ -132,7 +132,7 @@ namespace stp
 {
 	namespace _stp // Implementation namespace
 	{
-		namespace stdx::meta // Reduced version
+		namespace stdx::meta // Fundamental version
 		{
 			template <auto>
 			struct val;
@@ -1341,7 +1341,7 @@ namespace stp
 			_threadpool_state(state),
 			_threadpool_priority(priority)
 		{
-			for (size_t n = 0; n < size; ++n)
+			for (size_t n = 0; n < size; ++n) // Idea: make thread initialize threadpool for maximum speed
 			{
 				_threadpool_thread_list.emplace_back(this);
 			}
@@ -1371,6 +1371,7 @@ namespace stp
 		void execute(task<RetType(ParamTypes ...)> & task, ParamTypes && ... args)
 		{
 			auto priority = _threadpool_priority(task.get_priority());
+
 			auto function = task.function(std::forward<ParamTypes>(args) ...);
 
 			std::scoped_lock<std::mutex> lock(_threadpool_queue_mutex);
