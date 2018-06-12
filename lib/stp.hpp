@@ -8,7 +8,7 @@
 #include <future>
 #include <shared_mutex>
 
-namespace stp // SimpleThreadPools - version B.5.0.0
+namespace stp // SimpleThreadPools - version B.5.0.1
 {
 	template <int N>
 	struct _placeholder
