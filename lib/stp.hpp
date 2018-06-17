@@ -1,3 +1,24 @@
+//======================================================================================================================================================================================================//
+//																																																		//
+//		SimpleThreadPools, a library that implements a threadpool class and related utilities over the C++ Standard Library																				//	
+//		Copyright(C) 2017 Ricardo Santos																																								//
+//																																																		//
+//		This program is free software; you can redistribute it and/or modify																															//
+//		it under the terms of the GNU General Public License as published by																															//
+//		the Free Software Foundation; either version 2 of the License, or																																//
+//		(at your option) any later version.																																								//
+//																																																		//
+//		This program is distributed in the hope that it will be useful,																																	//
+//		but WITHOUT ANY WARRANTY; without even the implied warranty of																																	//
+//		MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the																																		//
+//		GNU General Public License for more details.																																					//
+//																																																		//
+//		You should have received a copy of the GNU General Public License along																															//
+//		with this program; if not, write to the Free Software Foundation, Inc.,																															//
+//		51 Franklin Street, Fifth Floor, Boston, MA 02110 - 1301 USA.																																	//
+//																																																		//
+//======================================================================================================================================================================================================//
+
 #ifndef SIMPLE_THREAD_POOLS_HPP
 #define SIMPLE_THREAD_POOLS_HPP
 
@@ -12,13 +33,131 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 {
 	namespace stpi // Implementation namespace
 	{
-		namespace stdx::meta // Modified version
+		namespace meta
 		{
+			// Container types
+
+			// Packs
+
 			template <class ...>
-			struct pack;
+			struct pack
+			{
+				static constexpr size_t size = 0;
+
+				template <class ... Types>
+				using push = pack<Types ...>;
+				template <size_t N>
+				using pop = pack<>;
+			};
+
+			template <class Type>
+			struct pack<Type>
+			{
+				static constexpr size_t size = 1;
+				using first = Type;
+				using last = Type;
+
+				template <class ... Types>
+				using push = pack<Type, Types ...>;
+				template <size_t N>
+				using pop = std::conditional_t<bool(N), pack<>, pack<Type>>;
+			};
+
+			template <class Type, class ... Types>
+			struct pack<Type, Types ...>
+			{
+				static constexpr size_t size = 1 + sizeof...(Types);
+				using first = Type;
+				using last = typename pack<Types ...>::last;
+
+				template <class ... Types1>
+				using push = pack<Type, Types ..., Types1 ...>;
+				template <size_t N>
+				using pop = std::conditional_t<bool(N), typename pack<Types ...>::template pop<N - 1>, pack<Type, Types ...>>;
+			};
+
+			// Valpacks
 
 			template <auto ...>
-			struct valpack;
+			struct valpack
+			{
+				static constexpr size_t size = 0;
+
+				template <auto ... Values>
+				using push = valpack<Values ...>;
+				template <size_t N>
+				using pop = pack<>;
+			};
+
+			template <auto Value>
+			struct valpack<Value>
+			{
+				static constexpr size_t size = 1;
+				static constexpr auto first = Value;
+				static constexpr auto last = Value;
+
+				template <auto ... Values>
+				using push = valpack<Value, Values ...>;
+				template <size_t N>
+				using pop = std::conditional_t<bool(N), valpack<>, valpack<Value>>;
+			};
+
+			template <auto Value, auto ... Values>
+			struct valpack<Value, Values ...>
+			{
+				static constexpr size_t size = 1 + sizeof...(Values);
+				static constexpr auto first = Value;
+				static constexpr auto last = valpack<Values ...>::last;
+
+				template <auto ... Values1>
+				using push = valpack<Value, Values ..., Values1 ...>;
+				template <size_t N>
+				using pop = std::conditional_t<bool(N), typename valpack<Values ...>::template pop<N - 1>, valpack<Value, Values ...>>;
+			};
+
+			// Pack modifiers, specialized for stp
+
+			template <class InPack1, class InPack2, class OutPack>
+			struct _placeholder_types : _placeholder_types<typename InPack1::template pop<1>, typename InPack2::template pop<1>, std::conditional_t<bool(std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<typename InPack1::first>>>), typename OutPack::template push<typename InPack2::first>, OutPack>>
+			{
+			};
+
+			template <class OutPack>
+			struct _placeholder_types<pack<>, pack<>, OutPack>
+			{
+				using _type = OutPack;
+			};
+
+			template <class InPack1, class InPack2>
+			using placeholder_types = typename _placeholder_types<InPack1, InPack2, pack<>>::_type;
+
+			template <class InPack, class OutPack>
+			struct _placeholder_values : _placeholder_values<typename InPack::template pop<1>, std::conditional_t<bool(std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<typename InPack::first>>>), typename OutPack::template push<size_t(std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<typename InPack::first>>> -1)>, OutPack>>
+			{
+			};
+
+			template <class OutPack>
+			struct _placeholder_values<pack<>, OutPack>
+			{
+				using _type = OutPack;
+			};
+
+			template <class InPack>
+			using placeholder_values = typename _placeholder_values<InPack, valpack<>>::_type;
+
+			template <class InPack, class OutPack, class IndexPack>
+			struct _parameter_types : _parameter_types<InPack, typename OutPack::template push<typename InPack::template pop<IndexPack::first>::first>, typename IndexPack::template pop<1>>
+			{
+			};
+
+			template <class InPack, class OutPack>
+			struct _parameter_types<InPack, OutPack, valpack<>>
+			{
+				using _type = OutPack;
+			};
+
+			template <class InPack, class IndexPack>
+			using parameter_types = typename _parameter_types<InPack, pack<>, IndexPack>::_type;
 
 			// Function traits
 
@@ -180,256 +319,12 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 
 			template <class FuncType>
 			using make_function_signature = typename _make_function_signature<FuncType>::_type;
-
-			// Atomic traits (Note: this might be helpful when atomic_ptr and concurrent_queue are added)
-
-			// Determines if built-in atomic type is lock-free, assuming that it is properly aligned
-
-/*			template <class>
-			struct _is_lock_free;
-
-			template <class Type>
-			struct _is_lock_free<std::atomic<Type>> : std::false_type
-			{
-			};
-
-#ifdef ATOMIC_BOOL_LOCK_FREE
-			template <>
-			struct _is_lock_free<std::atomic<bool>> : std::bool_constant<bool(ATOMIC_BOOL_LOCK_FREE)>
-			{
-			};
-#endif
-
-#ifdef ATOMIC_CHAR_LOCK_FREE
-			template <>
-			struct _is_lock_free<std::atomic<char>> : std::bool_constant<bool(ATOMIC_CHAR_LOCK_FREE)>
-			{
-			};
-
-			template <>
-			struct _is_lock_free<std::atomic<unsigned char>> : std::bool_constant<bool(ATOMIC_CHAR_LOCK_FREE)>
-			{
-			};
-#endif
-
-#ifdef ATOMIC_CHAR16_T_LOCK_FREE
-			template <>
-			struct _is_lock_free<std::atomic<char16_t>> : std::bool_constant<bool(ATOMIC_CHAR16_T_LOCK_FREE)>
-			{
-			};
-#endif
-
-#ifdef ATOMIC_CHAR32_T_LOCK_FREE
-			template <>
-			struct _is_lock_free<std::atomic<char32_t>> : std::bool_constant<bool(ATOMIC_CHAR32_T_LOCK_FREE)>
-			{
-			};
-#endif
-
-#ifdef ATOMIC_WCHAR_T_LOCK_FREE
-			template <>
-			struct _is_lock_free<std::atomic<wchar_t>> : std::bool_constant<bool(ATOMIC_WCHAR_T_LOCK_FREE)>
-			{
-			};
-#endif
-
-#ifdef ATOMIC_SHORT_LOCK_FREE
-			template <>
-			struct _is_lock_free<std::atomic<short>> : std::bool_constant<bool(ATOMIC_SHORT_LOCK_FREE)>
-			{
-			};
-
-			template <>
-			struct _is_lock_free<std::atomic<unsigned short>> : std::bool_constant<bool(ATOMIC_SHORT_LOCK_FREE)>
-			{
-			};
-#endif
-
-#ifdef ATOMIC_INT_LOCK_FREE
-			template <>
-			struct _is_lock_free<std::atomic<int>> : std::bool_constant<bool(ATOMIC_INT_LOCK_FREE)>
-			{
-			};
-
-			template <>
-			struct _is_lock_free<std::atomic<unsigned int>> : std::bool_constant<bool(ATOMIC_INT_LOCK_FREE)>
-			{
-			};
-#endif
-
-#ifdef ATOMIC_LONG_LOCK_FREE
-			template <>
-			struct _is_lock_free<std::atomic<long>> : std::bool_constant<bool(ATOMIC_LONG_LOCK_FREE)>
-			{
-			};
-
-			template <>
-			struct _is_lock_free<std::atomic<unsigned long>> : std::bool_constant<bool(ATOMIC_LONG_LOCK_FREE)>
-			{
-			};
-#endif
-
-#ifdef ATOMIC_LLONG_LOCK_FREE
-			template <>
-			struct _is_lock_free<std::atomic<long long>> : std::bool_constant<bool(ATOMIC_LLONG_LOCK_FREE)>
-			{
-			};
-
-			template <>
-			struct _is_lock_free<std::atomic<unsigned long long>> : std::bool_constant<bool(ATOMIC_LLONG_LOCK_FREE)>
-			{
-			};
-#endif
-
-#ifdef ATOMIC_POINTER_LOCK_FREE
-			template <class Type>
-			struct _is_lock_free<std::atomic<Type *>> : std::bool_constant<bool(ATOMIC_POINTER_LOCK_FREE)>
-			{
-			};
-#endif	*/
-
-			// Container types
-
-			// Packs
-
-			template <class ...>
-			struct pack
-			{
-				static constexpr size_t size = 0;
-				template <class ... Types>
-				using push = pack<Types ...>;
-				template <size_t N>
-				using pop = pack<>;
-			};
-
-			template <class Type>
-			struct pack<Type>
-			{
-				using first = Type;
-				using last = Type;
-				static constexpr size_t size = 1;
-				template <class ... Types>
-				using push = pack<Type, Types ...>;
-				template <size_t N>
-				using pop = std::conditional_t<bool(N), pack<>, pack<Type>>;
-			};
-
-			template <class Type, class ... Types>
-			struct pack<Type, Types ...>
-			{
-				using first = Type;
-				using last = typename pack<Types ...>::last;
-				static constexpr size_t size = 1 + sizeof...(Types);
-				template <class ... Types1>
-				using push = pack<Type, Types ..., Types1 ...>;
-				template <size_t N>
-				using pop = std::conditional_t<bool(N), typename pack<Types ...>::template pop<N - 1>, pack<Type, Types ...>>;
-			};
-
-			// Valpacks
-
-			template <auto ...>
-			struct valpack
-			{
-				static constexpr size_t size = 0;
-				template <auto ... Values>
-				using push = valpack<Values ...>;
-				template <size_t N>
-				using pop = pack<>;
-			};
-
-			template <auto Value>
-			struct valpack<Value>
-			{
-				static constexpr auto first = Value;
-				static constexpr auto last = Value;
-				static constexpr size_t size = 1;
-				template <auto ... Values>
-				using push = valpack<Value, Values ...>;
-				template <size_t N>
-				using pop = std::conditional_t<bool(N), valpack<>, valpack<Value>>;
-			};
-
-			template <auto Value, auto ... Values>
-			struct valpack<Value, Values ...>
-			{
-				static constexpr auto first = Value;
-				static constexpr auto last = valpack<Values ...>::last;
-				static constexpr size_t size = 1 + sizeof...(Values);
-				template <auto ... Values1>
-				using push = valpack<Value, Values ..., Values1 ...>;
-				template <size_t N>
-				using pop = std::conditional_t<bool(N), typename valpack<Values ...>::template pop<N - 1>, valpack<Value, Values ...>>;
-			};
-
-			// Pack modifiers (Specialized for stp)
-
-			template <class InPack1, class InPack2, class OutPack>
-			struct _placeholder_types : _placeholder_types<typename InPack1::template pop<1>, typename InPack2::template pop<1>, std::conditional_t<bool(std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<typename InPack1::first>>>), typename OutPack::template push<typename InPack2::first>, OutPack>>
-			{
-			};
-
-			template <class OutPack>
-			struct _placeholder_types<pack<>, pack<>, OutPack>
-			{
-				using _type = OutPack;
-			};
-
-			template <class InPack1, class InPack2>
-			using placeholder_types = typename _placeholder_types<InPack1, InPack2, pack<>>::_type;
-
-			template <class InPack, class OutPack>
-			struct _placeholder_values : _placeholder_values<typename InPack::template pop<1>, std::conditional_t<bool(std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<typename InPack::first>>>), typename OutPack::template push<size_t(std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<typename InPack::first>>> - 1)>, OutPack>>
-			{
-			};
-
-			template <class OutPack>
-			struct _placeholder_values<pack<>, OutPack>
-			{
-				using _type = OutPack;
-			};
-
-			template <class InPack>
-			using placeholder_values = typename _placeholder_values<InPack, valpack<>>::_type;
-
-			template <class InPack, class OutPack, class IndexPack>
-			struct _parameter_types : _parameter_types<InPack, typename OutPack::template push<typename InPack::template pop<IndexPack::first>::first>, typename IndexPack::template pop<1>>
-			{
-			};
-
-			template <class InPack, class OutPack>
-			struct _parameter_types<InPack, OutPack, valpack<>>
-			{
-				using _type = OutPack;
-			};
-
-			template <class InPack, class IndexPack>
-			using parameter_types = typename _parameter_types<InPack, pack<>, IndexPack>::_type;
 		}
 
-		using namespace stdx::meta;
-
-		namespace stdx::binder // Modified version
+		namespace functional
 		{
-			template <class FuncType, class ... ArgTypes>
-			auto bind(FuncType * func, ArgTypes && ... args)
-			{
-				static_assert(std::is_function_v<FuncType>,
-							  "'stpi::bind(FuncType *, ArgTypes && ...)': "
-							  "FuncType must be a function, a pointer to function, or a pointer to member function");
-				return std::bind(func, _bind_forward<ArgTypes>(args) ...);
-			}
-			template <class FuncType, class ObjType, class ... ArgTypes>
-			auto bind(FuncType ObjType::* func, ObjType * obj, ArgTypes && ... args)
-			{
-				static_assert(std::is_function_v<FuncType>,
-							  "'stpi::bind(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
-							  "FuncType must be a function, a pointer to function, or a pointer to member function"); // This assertion may be unnecessary
-				return std::bind(func, obj, _bind_forward<ArgTypes>(args) ...);
-			}
-
 			template <class ValType>
-			auto _bind_forward(std::remove_reference_t<ValType> & val)
+			auto forward(std::remove_reference_t<ValType> & val)
 			{
 				if constexpr (std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<ValType>>>)
 				{
@@ -444,15 +339,30 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 					return std::bind(std::move<ValType &>, std::move(val));
 				}
 			}
+
+			template <class FuncType, class ... ArgTypes>
+			auto bind(FuncType * func, ArgTypes && ... args)
+			{
+				static_assert(std::is_function_v<FuncType>,
+							  "'stpi::bind(FuncType *, ArgTypes && ...)': "
+							  "FuncType must be a function, a pointer to function, or a pointer to member function");
+				return std::bind(func, functional::forward<ArgTypes>(args) ...);
+			}
+			template <class FuncType, class ObjType, class ... ArgTypes>
+			auto bind(FuncType ObjType::* func, ObjType * obj, ArgTypes && ... args)
+			{
+				static_assert(std::is_function_v<FuncType>,
+							  "'stpi::bind(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
+							  "FuncType must be a function, a pointer to function, or a pointer to member function");
+				return std::bind(func, obj, functional::forward<ArgTypes>(args) ...);
+			}
 		}
 
-		using namespace stdx::binder;
-
 		template <class FuncType>
-		using task_return_type = typename function_signature<FuncType>::return_type;
+		using task_return_type = typename meta::function_signature<FuncType>::return_type;
 
 		template <class FuncType, class ... ArgTypes>
-		using task_parameter_types = parameter_types<placeholder_types<pack<ArgTypes ...>, typename function_signature<FuncType>::parameter_types>, placeholder_values<pack<ArgTypes ...>>>;
+		using task_parameter_types = meta::parameter_types<meta::placeholder_types<meta::pack<ArgTypes ...>, typename meta::function_signature<FuncType>::parameter_types>, meta::placeholder_values<meta::pack<ArgTypes ...>>>;
 	}
 
 	// Task error class
@@ -534,15 +444,15 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 	template <class>
 	class _task; // Implementation class
 
-	template <class RetType, class ... ParamTypes> // TODO review memory order / review behaviour for task_state::cancelling in wait() and get()
+	template <class RetType, class ... ParamTypes>
 	class _task<RetType(ParamTypes ...)>
 	{
-		static_assert(sizeof(int_least8_t) != sizeof(int_least16_t), "Incompatible architecture"); // Consider a better way to check if priority is set
+		static_assert(sizeof(int_least8_t) != sizeof(int_least16_t), "Incompatible architecture"); // Will be unnecessary in future versions
 	protected:
 		_task() = default;
 		template <class FuncType, class ... ArgTypes>
 		_task(FuncType * func, ArgTypes && ... args) :
-			_task_package(stpi::bind(func, std::forward<ArgTypes>(args) ...)),
+			_task_package(stpi::functional::bind(func, std::forward<ArgTypes>(args) ...)),
 			_task_state(task_state::suspended)
 		{
 			static_assert(std::is_function_v<FuncType>,
@@ -551,13 +461,13 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 			static_assert(std::is_same_v<RetType, stpi::task_return_type<FuncType>>,
 						  "'stp::task<RetType, ParamTypes ...>::task(FuncType *, ArgTypes && ...)': "
 						  "RetType must be the same type as FuncType's return type");
-			static_assert(std::is_same_v<stpi::pack<ParamTypes ...>, stpi::task_parameter_types<FuncType, ArgTypes ...>>,
+			static_assert(std::is_same_v<stpi::meta::pack<ParamTypes ...>, stpi::task_parameter_types<FuncType, ArgTypes ...>>,
 						  "'stp::task<RetType, ParamTypes ...>::task(FuncType *, ArgTypes && ...)': "
 						  "ParamTypes must be the same types as FuncType's parameter types corresponding to the placeholder ArgTypes");
 		}
 		template <class FuncType, class ObjType, class ... ArgTypes>
 		_task(FuncType ObjType::* func, ObjType * obj, ArgTypes && ... args) :
-			_task_package(stpi::bind(func, obj, std::forward<ArgTypes>(args) ...)),
+			_task_package(stpi::functional::bind(func, obj, std::forward<ArgTypes>(args) ...)),
 			_task_state(task_state::suspended)
 		{
 			static_assert(std::is_function_v<FuncType>,
@@ -566,7 +476,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 			static_assert(std::is_same_v<RetType, stpi::task_return_type<FuncType>>,
 						  "'stp::task<RetType, ParamTypes ...>::task(FuncType *, ArgTypes && ...)': "
 						  "RetType must be the same type as the FuncType return type");
-			static_assert(std::is_same_v<stpi::pack<ParamTypes ...>, stpi::task_parameter_types<FuncType, ArgTypes ...>>,
+			static_assert(std::is_same_v<stpi::meta::pack<ParamTypes ...>, stpi::task_parameter_types<FuncType, ArgTypes ...>>,
 						  "'stp::task<RetType, ParamTypes ...>::task(FuncType *, ArgTypes && ...)': "
 						  "ParamTypes must be the same types as the FuncType parameter types corresponding to the placeholder ArgTypes");
 		}
@@ -675,7 +585,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 					break;
 			}
 
-			std::packaged_task<void()> function(stpi::bind(&_task<RetType(ParamTypes ...)>::_execute, this, std::forward<ParamTypes>(args) ...));
+			std::packaged_task<void()> function(stpi::functional::bind(&_task<RetType(ParamTypes ...)>::_execute, this, std::forward<ParamTypes>(args) ...));
 
 			_task_future = function.get_future();
 
@@ -733,7 +643,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 		std::packaged_task<RetType(ParamTypes ...)> _task_package;
 		std::future<void> _task_future;
 		std::atomic<task_state> _task_state{ task_state::null };
-		int_least16_t _task_priority{ std::numeric_limits<int_least16_t>::min() }; // TODO Define this better (to get rid of the assertion)
+		int_least16_t _task_priority{ std::numeric_limits<int_least16_t>::min() };
 	};
 
 	template <class>
@@ -766,7 +676,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 		{
 			_task<RetType(ParamTypes ...)>::operator=(other._move());
 
-			_task_result = std::move(other._task_result); // std::optional move assignment operator should protect against self-assignment
+			_task_result = std::move(other._task_result);
 
 			return *this;
 		}
@@ -876,9 +786,9 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 	};
 
 	template <class FuncType, class ... ArgTypes>
-	task(FuncType *, ArgTypes ...) -> task<stpi::make_function_signature<stpi::pack<stpi::task_return_type<FuncType>, stpi::task_parameter_types<FuncType, ArgTypes ...>>>>;
+	task(FuncType *, ArgTypes ...) -> task<stpi::meta::make_function_signature<stpi::meta::pack<stpi::task_return_type<FuncType>, stpi::task_parameter_types<FuncType, ArgTypes ...>>>>;
 	template <class FuncType, class ObjType, class ... ArgTypes>
-	task(FuncType ObjType::*, ObjType *, ArgTypes ...) -> task<stpi::make_function_signature<stpi::pack<stpi::task_return_type<FuncType>, stpi::task_parameter_types<FuncType, ArgTypes ...>>>>;
+	task(FuncType ObjType::*, ObjType *, ArgTypes ...) -> task<stpi::meta::make_function_signature<stpi::meta::pack<stpi::task_return_type<FuncType>, stpi::task_parameter_types<FuncType, ArgTypes ...>>>>;
 
 	template <class FuncType, class ... ArgTypes>
 	inline auto make_task(FuncType * func, ArgTypes && ... args) // Allows disambiguation of function overload by specifying the parameters' types, automatically deduces type of task based on placeholder arguments, and allows construction of task with pre-set priority
@@ -950,7 +860,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 			{
 				if (thread.active)
 				{
-					thread.thread.join();
+					thread.thread->join();
 				}
 			}
 		}
@@ -989,7 +899,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 							{
 								it->active = true;
 								it->inactive = false;
-								it->thread = std::thread(&threadpool::_pool, this, &*it);
+								it->thread = std::make_unique<std::thread>(&threadpool::_pool, this, &*it);
 								
 								++n;
 							}
@@ -1073,14 +983,14 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 		struct _thread
 		{
 			_thread(threadpool * threadpool) :
-				thread(&threadpool::_pool, threadpool, this)
+				thread(std::make_unique<std::thread>(&threadpool::_pool, threadpool, this))
 			{
 			}
 
 			_task task;
 			bool active{ true };
 			bool inactive{ false };
-			std::thread thread; // Must be the last variable to be initialized
+			std::unique_ptr<std::thread> thread; // Must be the last variable to be initialized
 		};
 
 		void _pool(_thread * this_thread)
@@ -1120,17 +1030,17 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 
 			if (bool(this_thread->inactive = !this_thread->active))
 			{
-				this_thread->thread.detach();
+				this_thread->thread->detach();
 			}
 		}
 
 		task_priority const _threadpool_priority;
 		size_t _threadpool_size;
 		threadpool_state _threadpool_state;
-		std::atomic_bool _threadpool_task{ false }; // Replace by concurrent_queue when done
-		std::priority_queue<_task, std::deque<_task>> _threadpool_task_queue; // Replace by concurrent_queue when done
+		std::atomic_bool _threadpool_task{ false };
+		std::priority_queue<_task, std::deque<_task>> _threadpool_task_queue;
 		std::list<_thread> _threadpool_thread_list;
-		std::mutex _threadpool_queue_mutex; // Replace by concurrent_queue when done
+		std::mutex _threadpool_queue_mutex;
 		std::shared_mutex _threadpool_mutex;
 		std::condition_variable_any _threadpool_condvar;
 	};
