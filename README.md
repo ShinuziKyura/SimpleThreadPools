@@ -1,6 +1,6 @@
 <h1> SimpleThreadPools </h1>
 
-A simple, intuitive implementation of a threadpool class built upon the C++ Standard Library
+A simple, easy-to-use implementation of a threadpool class built upon the C++ Standard Library
 
 ---
 
@@ -8,6 +8,6 @@ A simple, intuitive implementation of a threadpool class built upon the C++ Stan
 
 <h6> (To be expanded at a later date) </h6>
 
-To use the library, \#include the 'stp.hpp' file in your code.
+To use the library, \#include the 'lib/stp.hpp' file in your code.
 
 All the library classes and functions are part of a namespace called 'stp'.
