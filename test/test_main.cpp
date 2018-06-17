@@ -15,10 +15,10 @@
 
 // Test variables
 
-using				ARRAY_TYPE			= uint_least32_t;
-constexpr size_t	ARRAY_SIZE			= 1000000;
-constexpr size_t	ARRAY_AMOUNT		= 8;
 constexpr size_t	THREAD_AMOUNT		= 8;
+constexpr size_t	ARRAY_AMOUNT		= THREAD_AMOUNT * 1;
+constexpr size_t	ARRAY_SIZE			= 1'000'000;
+using				ARRAY_TYPE			= uint_least64_t;
 
 // Test utilities
 
@@ -311,12 +311,12 @@ int main()
 	std::setvbuf(stdout, nullptr, _IOFBF, 2048);
 	std::ios_base::sync_with_stdio(false);
 	std::cout << std::scientific;
-
+	
 #if (GENERATE_FILE)
-	std::fstream fout("./test/stp.tests", std::ios::out | std::ios::trunc);
+	std::fstream fout("./test/test.out", std::ios::out | std::ios::trunc);
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
-
+	
 	[[maybe_unused]] long double total_time = 0.0;
 
 #if (TEST_SINGLE_THREAD)
