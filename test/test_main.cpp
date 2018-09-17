@@ -9,9 +9,9 @@
 // Compilation variables
 
 #define	GENERATE_FILE 0
-#define TEST_SINGLE_THREAD 1
-#define TEST_MULTI_THREAD 1
-#define TEST_THREAD_POOL 1
+#define TEST_SINGLE_THREAD 0
+#define TEST_MULTI_THREAD 0
+#define TEST_THREAD_POOL 0
 
 // Test variables
 
@@ -317,7 +317,8 @@ int main()
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
 	
-	[[maybe_unused]] long double total_time = 0.0;
+	[[maybe_unused]] 
+	long double total_time = 0.0;
 
 #if (TEST_SINGLE_THREAD)
 	std::cout <<
@@ -368,7 +369,7 @@ int main()
 	fout.close();
 	std::cout.rdbuf(cout_buffer);
 #endif
-
+	
 	std::cout << "Press \"Enter\" to exit..." << std::endl;
 	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
