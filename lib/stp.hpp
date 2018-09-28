@@ -31,7 +31,7 @@
 
 namespace stp // SimpleThreadPools - version B.5.1.0
 {
-	namespace stpi // Implementation namespace
+	namespace stpi // Implementation namespace (review names)
 	{
 		namespace stdx::meta // Modified version
 		{
@@ -552,7 +552,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 	template <class>
 	class task;
 
-	template <class RetType, class ... ParamTypes> // TODO review memory order / review behaviour for task_state::cancelling in wait() and get()
+	template <class RetType, class ... ParamTypes> // TODO review memory order (should need no more than relaxed) / review behaviour for task_state::cancelling in wait() and get()
 	class _task<RetType(ParamTypes ...)>
 	{
 		static_assert(sizeof(int_least8_t) != sizeof(int_least16_t), "Incompatible architecture"); // Consider a better way to check if priority is set
@@ -622,13 +622,13 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 		{
 			auto state = task_state::waiting;
 
-			_task_state.compare_exchange_strong(state, task_state::cancelling, std::memory_order_release, std::memory_order_acquire);
+			_task_state.compare_exchange_strong(state, task_state::cancelling, std::memory_order_relaxed);
 
 			return state;
 		}
 		void wait() const
 		{
-			switch (_task_state.load(std::memory_order_acquire))
+			switch (_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::null:
 					throw task_error(task_error_code::no_state);
@@ -651,7 +651,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 		template <class Clock, class Duration>
 		task_state wait_until(std::chrono::time_point<Clock, Duration> const & time_point) const
 		{
-			switch (_task_state.load(std::memory_order_acquire))
+			switch (_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::null:
 					throw task_error(task_error_code::no_state);
@@ -666,11 +666,11 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 		}
 		task_state state() const
 		{
-			return _task_state.load(std::memory_order_acquire);
+			return _task_state.load(std::memory_order_relaxed);
 		}
 		bool ready() const
 		{
-			return _task_state.load(std::memory_order_acquire) == task_state::ready;
+			return _task_state.load(std::memory_order_relaxed) == task_state::ready;
 		}
 		int_least16_t get_priority()
 		{
@@ -726,7 +726,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 		{
 			auto state = task_state::waiting;
 
-			if (_task_state.compare_exchange_strong(state, task_state::running, std::memory_order_release))
+			if (_task_state.compare_exchange_strong(state, task_state::running, std::memory_order_relaxed))
 			{
 				_task_package(std::forward<ParamTypes>(args) ...);
 
@@ -790,7 +790,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 
 		std::add_lvalue_reference_t<RetType> get()
 		{
-			switch (this->_task_state.load(std::memory_order_acquire))
+			switch (this->_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::null:
 					throw task_error(task_error_code::no_state);
@@ -858,7 +858,7 @@ namespace stp // SimpleThreadPools - version B.5.1.0
 
 		void get()
 		{
-			switch (this->_task_state.load(std::memory_order_acquire))
+			switch (this->_task_state.load(std::memory_order_relaxed))
 			{
 				case task_state::null:
 					throw task_error(task_error_code::no_state);
