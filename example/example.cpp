@@ -2,16 +2,16 @@
 #include <fstream>
 #include <array>
 
-#include "test_utility.hpp"
+#include "utility.hpp"
 
 #include "../lib/stp.hpp" // Standard revision required: C++17
 
 // Compilation variables
 
 #define	GENERATE_FILE 0
-#define TEST_SINGLE_THREAD 1
-#define TEST_MULTI_THREAD 1
-#define TEST_THREAD_POOL 1
+#define TEST_SINGLE_THREAD 01
+#define TEST_MULTI_THREAD 01
+#define TEST_THREAD_POOL 01
 
 // Test variables
 
@@ -78,9 +78,9 @@ long double single_thread_test()
 
 		for (auto & task : tasks)
 		{
-			total_time_sum += task.get();
+			total_time_sum += task;
 			std::cout <<
-				"\t\t" << task.get() << " ns\n";
+				"\t\t" << task << " ns\n";
 		}
 
 		std::cout <<
@@ -116,9 +116,9 @@ long double single_thread_test()
 
 		for (auto & task : tasks)
 		{
-			total_time_sum += task.get();
+			total_time_sum += task;
 			std::cout <<
-				"\t\t" << task.get() << " ns\n";
+				"\t\t" << task << " ns\n";
 		}
 
 		std::cout <<
@@ -163,9 +163,9 @@ long double multi_thread_test()
 
 		for (auto & task : tasks)
 		{
-			total_time_sum += task.get();
+			total_time_sum += task;
 			std::cout <<
-				"\t\t" << task.get() << " ns\n";
+				"\t\t" << task << " ns\n";
 		}
 
 		std::cout <<
@@ -201,9 +201,9 @@ long double multi_thread_test()
 
 		for (auto & task : tasks)
 		{
-			total_time_sum += task.get();
+			total_time_sum += task;
 			std::cout <<
-				"\t\t" << task.get() << " ns\n";
+				"\t\t" << task << " ns\n";
 		}
 
 		std::cout <<
@@ -250,9 +250,9 @@ long double thread_pool_test()
 
 		for (auto & task : tasks)
 		{
-			total_time_sum += task.get();
+			total_time_sum += task;
 			std::cout <<
-				"\t\t" << task.get() << " ns\n";
+				"\t\t" << task << " ns\n";
 		}
 
 		std::cout <<
@@ -288,9 +288,9 @@ long double thread_pool_test()
 
 		for (auto & task : tasks)
 		{
-			total_time_sum += task.get();
+			total_time_sum += task;
 			std::cout <<
-				"\t\t" << task.get() << " ns\n";
+				"\t\t" << task << " ns\n";
 		}
 
 		std::cout <<
@@ -308,17 +308,18 @@ long double thread_pool_test()
 
 int main()
 {
-	std::setvbuf(stdout, nullptr, _IOFBF, 2048);
+	std::setvbuf(stdout, NULL, _IOFBF, BUFSIZ);
 	std::ios_base::sync_with_stdio(false);
+
 	std::cout << std::scientific;
-	
+
 #if (GENERATE_FILE)
-	std::fstream fout("./test/test.out", std::ios::out | std::ios::trunc);
+	std::fstream fout("./example/test.txt", std::ios::out | std::ios::trunc);
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
-	
-	[[maybe_unused]] long double total_time = 0.0;
 
+	[[maybe_unused]] long double total_time = 0.0;
+	
 #if (TEST_SINGLE_THREAD)
 	std::cout <<
 		"Single thread test begin...\n\n";
