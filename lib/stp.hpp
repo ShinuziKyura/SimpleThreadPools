@@ -30,7 +30,7 @@
 #include <future>
 #include <shared_mutex>
 
-namespace stp // SimpleThreadPools - version B.5.2.0
+namespace stp // SimpleThreadPools - version B.5.2.1
 {
 	namespace implementation // Implementation-reserved namespace
 	{
@@ -501,13 +501,13 @@ namespace stp // SimpleThreadPools - version B.5.2.0
 			_task_state(task_state::suspended)
 		{
 			static_assert(std::is_function_v<FuncType>,
-						  "'stp::task<RetType, ParamTypes ...>::task(FuncType *, ArgTypes && ...)': "
+						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType *, ArgTypes && ...)': "
 						  "FuncType must be a function type");
 			static_assert(std::is_same_v<RetType, implementation::task_return_type<FuncType>>,
-						  "'stp::task<RetType, ParamTypes ...>::task(FuncType *, ArgTypes && ...)': "
+						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType *, ArgTypes && ...)': "
 						  "RetType must be of the same type as FuncType's return type");
 			static_assert(std::is_same_v<implementation::meta::pack<ParamTypes ...>, implementation::task_parameter_types<FuncType, ArgTypes ...>>,
-						  "'stp::task<RetType, ParamTypes ...>::task(FuncType *, ArgTypes && ...)': "
+						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType *, ArgTypes && ...)': "
 						  "ParamTypes must be of the same types as FuncType's parameters corresponding to ArgTypes' placeholder types");
 		}
 		template <class FuncType, class ObjType, class ... ArgTypes>
@@ -516,13 +516,13 @@ namespace stp // SimpleThreadPools - version B.5.2.0
 			_task_state(task_state::suspended)
 		{
 			static_assert(std::is_function_v<FuncType>,
-						  "'stp::task<RetType, ParamTypes ...>::task(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
+						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
 						  "FuncType must be a function type");
 			static_assert(std::is_same_v<RetType, implementation::task_return_type<FuncType>>,
-						  "'stp::task<RetType, ParamTypes ...>::task(FuncType *, ArgTypes && ...)': "
+						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
 						  "RetType must be of the same type as FuncType's return type");
 			static_assert(std::is_same_v<implementation::meta::pack<ParamTypes ...>, implementation::task_parameter_types<FuncType, ArgTypes ...>>,
-						  "'stp::task<RetType, ParamTypes ...>::task(FuncType *, ArgTypes && ...)': "
+						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
 						  "ParamTypes must be of the same types as FuncType's parameters corresponding to ArgTypes' placeholder types");
 		}
 		_task(_task && other) :

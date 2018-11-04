@@ -9,9 +9,9 @@
 // Compilation variables
 
 #define	GENERATE_FILE 0
-#define TEST_SINGLE_THREAD 01
-#define TEST_MULTI_THREAD 01
-#define TEST_THREAD_POOL 01
+#define TEST_SINGLE_THREAD 1
+#define TEST_MULTI_THREAD 1
+#define TEST_THREAD_POOL 1
 
 // Test variables
 
