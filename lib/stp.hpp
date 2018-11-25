@@ -22,18 +22,19 @@
 #ifndef SIMPLE_THREAD_POOLS_HPP
 #define SIMPLE_THREAD_POOLS_HPP
 
-#include <list>
-#include <queue>
 #include <any>
 #include <optional>
+#include <queue>
 #include <functional>
 #include <future>
 #include <shared_mutex>
 
-namespace stp // SimpleThreadPools - version B.5.2.1
+namespace stp // SimpleThreadPools - Library namespace - Version B.5.3.0
 {
-	namespace implementation // Implementation-reserved namespace
+	namespace _stp // SimpleThreadPools - Implementation namespace
 	{
+		// Meta
+
 		namespace meta
 		{
 			// Container types
@@ -133,15 +134,35 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 			template <class Pack>
 			using common_type_t = typename common_type<Pack>::type;
 
-			// Pack modifiers, specialized for stp
+			// Convertible types
+
+			template <class ... FromTypes, class ... ToTypes>
+			constexpr bool _convertible_types(pack<FromTypes ...>, pack<ToTypes ...>)
+			{
+				return (... && (std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<FromTypes>>> || std::is_convertible_v<FromTypes, ToTypes>));
+			}
+
+			template <class, class>
+			struct convertible_types;
+
+			template <class ... FromTypes, class ... ToTypes>
+			struct convertible_types<pack<FromTypes ...>, pack<ToTypes ...>>
+			{
+				static constexpr bool value = _convertible_types(pack<FromTypes ...>(), pack<ToTypes ...>());
+			};
+
+			template <class FromPack, class ToPack>
+			constexpr bool convertible_types_v = convertible_types<FromPack, ToPack>::value;
+
+			// Container types, specialized for stp
 
 			// Placeholder types
 
 			template <class InPack1, class InPack2, class OutPack>
-			struct _placeholder_types : 
+			struct _placeholder_types :
 				_placeholder_types<
-					typename InPack1::template pop<1>, 
-					typename InPack2::template pop<1>, 
+					typename InPack1::template pop<1>,
+					typename InPack2::template pop<1>,
 					std::conditional_t<bool(std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<typename InPack1::first>>>), typename OutPack::template push<typename InPack2::first>, OutPack>
 				>
 			{
@@ -159,9 +180,9 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 			// Placeholder values
 
 			template <class InPack, class OutPack>
-			struct _placeholder_values : 
+			struct _placeholder_values :
 				_placeholder_values<
-					typename InPack::template pop<1>, 
+					typename InPack::template pop<1>,
 					std::conditional_t<bool(std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<typename InPack::first>>>), typename OutPack::template push<std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<typename InPack::first>>>>, OutPack>
 				>
 			{
@@ -176,33 +197,40 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 			template <class InPack>
 			using placeholder_values = typename _placeholder_values<InPack, valpack<>>::_type;
 
-			// Parameter types
+			// Make placeholder parameters
 
 			template <class InPack1, class InPack2, class OutPack1, class OutPack2, size_t Index>
-			struct _parameter_types : 
-				_parameter_types<
-					std::conditional_t<bool(InPack2::first != Index), typename InPack1::template pop<1>::template push<typename InPack1::first>, typename InPack1::template pop<1>>, 
-					std::conditional_t<bool(InPack2::first != Index), typename InPack2::template pop<1>::template push<InPack2::first>, typename InPack2::template pop<1>>, 
-					OutPack1, 
-					std::conditional_t<bool(InPack2::first != Index), OutPack2, typename OutPack2::template push<typename InPack1::first>>, 
+			struct _make_placeholder_parameters :
+				_make_placeholder_parameters<
+					std::conditional_t<bool(InPack2::first != Index), typename InPack1::template pop<1>::template push<typename InPack1::first>, typename InPack1::template pop<1>>,
+					std::conditional_t<bool(InPack2::first != Index), typename InPack2::template pop<1>::template push<InPack2::first>, typename InPack2::template pop<1>>,
+					OutPack1,
+					std::conditional_t<bool(InPack2::first != Index), OutPack2, typename OutPack2::template push<typename InPack1::first>>,
 					Index
 				>
 			{
 			};
 
 			template <class ... InTypes, auto ... InValues, class OutPack1, class OutPack2, size_t Index>
-			struct _parameter_types<pack<void, InTypes ...>, valpack<0, InValues ...>, OutPack1, OutPack2, Index> : _parameter_types<pack<InTypes ..., void>, valpack<InValues ..., 0>, typename OutPack1::template push<common_type_t<OutPack2>>, pack<>, Index + 1>
+			struct _make_placeholder_parameters<pack<void, InTypes ...>, valpack<0, InValues ...>, OutPack1, OutPack2, Index> :
+				_make_placeholder_parameters<
+					pack<InTypes ..., void>,
+					valpack<InValues ..., 0>,
+					typename OutPack1::template push<common_type_t<OutPack2>>,
+					pack<>,
+					Index + 1
+				>
 			{
 			};
 
 			template <class OutPack1, class OutPack2, size_t Index>
-			struct _parameter_types<pack<void>, valpack<0>, OutPack1, OutPack2, Index>
+			struct _make_placeholder_parameters<pack<void>, valpack<0>, OutPack1, OutPack2, Index>
 			{
 				using _type = std::conditional_t<bool(OutPack2::size), typename OutPack1::template push<common_type_t<OutPack2>>, OutPack1>;
 			};
 
 			template <class InPack1, class InPack2>
-			using parameter_types = typename _parameter_types<typename InPack1::template push<void>, typename InPack2::template push<0>, pack<>, pack<>, 1>::_type;
+			using make_placeholder_parameters = typename _make_placeholder_parameters<typename InPack1::template push<void>, typename InPack2::template push<0>, pack<>, pack<>, 1>::_type;
 
 			// Function traits
 
@@ -366,48 +394,50 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 			using make_function_signature = typename _make_function_signature<RetType, ParamTypes>::_type;
 		}
 
-		namespace functional
-		{
-			template <class ValType>
-			auto forward(std::remove_reference_t<ValType> & val)
-			{
-				if constexpr (std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<ValType>>>)
-				{
-					return val;
-				}
-				else if constexpr (std::is_lvalue_reference_v<ValType>)
-				{
-					return std::ref(val);
-				}
-				else
-				{
-					return std::bind(std::move<ValType &>, std::move(val));
-				}
-			}
-
-			template <class FuncType, class ... ArgTypes>
-			auto bind(FuncType * func, ArgTypes && ... args)
-			{
-				static_assert(std::is_function_v<FuncType>,
-							  "'stpi::bind(FuncType *, ArgTypes && ...)': "
-							  "FuncType must be a function, a pointer to function, or a pointer to member function");
-				return std::bind(func, functional::forward<ArgTypes>(args) ...);
-			}
-			template <class FuncType, class ObjType, class ... ArgTypes>
-			auto bind(FuncType ObjType::* func, ObjType * obj, ArgTypes && ... args)
-			{
-				static_assert(std::is_function_v<FuncType>,
-							  "'stpi::bind(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
-							  "FuncType must be a function, a pointer to function, or a pointer to member function");
-				return std::bind(func, obj, functional::forward<ArgTypes>(args) ...);
-			}
-		}
-
 		template <class FuncType>
 		using task_return_type = typename meta::function_signature<FuncType>::return_type;
 
 		template <class FuncType, class ... ArgTypes>
-		using task_parameter_types = meta::parameter_types<meta::placeholder_types<meta::pack<ArgTypes ...>, typename meta::function_signature<FuncType>::parameter_types>, meta::placeholder_values<meta::pack<ArgTypes ...>>>;
+		using task_parameter_types = meta::make_placeholder_parameters<meta::placeholder_types<meta::pack<ArgTypes ...>, typename meta::function_signature<FuncType>::parameter_types>, meta::placeholder_values<meta::pack<ArgTypes ...>>>;
+
+		template <class FuncType, class ... ArgTypes>
+		using task_function_type = meta::make_function_signature<_stp::task_return_type<FuncType>, _stp::task_parameter_types<FuncType, ArgTypes ...>>;
+
+		// Functional
+
+		template <class ValType>
+		auto forward(std::remove_reference_t<ValType> & val)
+		{
+			if constexpr (std::is_placeholder_v<std::remove_cv_t<std::remove_reference_t<ValType>>>)
+			{
+				return val;
+			}
+			else if constexpr (std::is_lvalue_reference_v<ValType>)
+			{
+				return std::ref(val);
+			}
+			else
+			{
+				return std::bind(std::move<ValType &>, std::move(val));
+			}
+		}
+
+		template <class FuncType, class ... ArgTypes>
+		auto bind(FuncType * func, ArgTypes && ... args)
+		{
+			static_assert(std::is_function_v<FuncType>,
+						  "'_stp::bind(FuncType *, ArgTypes && ...)': "
+						  "FuncType must be a function, a pointer to function, or a pointer to member function");
+			return std::bind(func, _stp::forward<ArgTypes>(args) ...);
+		}
+		template <class FuncType, class ObjType, class ... ArgTypes>
+		auto bind(FuncType ObjType::* func, ObjType * obj, ArgTypes && ... args)
+		{
+			static_assert(std::is_function_v<FuncType>,
+						  "'_stp::bind(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
+						  "FuncType must be a function, a pointer to function, or a pointer to member function");
+			return std::bind(func, obj, _stp::forward<ArgTypes>(args) ...);
+		}
 	}
 
 	// Task error class
@@ -448,43 +478,18 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 	{
 		null,
 		suspended,
+		cancelled, // Currently unused
 		cancelling,
-		waiting, 
+		waiting,
+		executing, // Currently unused, will replace 'running'
+		executed, // Currently unused, will replace 'ready'
 		running,
 		ready,
 	};
 
-	class task_priority
-	{
-	public:
-		task_priority(int_least16_t default_priority = 0) :
-			_task_priority_default(std::clamp<int_least16_t>(default_priority, _task_priority_minimum, _task_priority_maximum))
-		{
-		}
-		task_priority(int_least16_t default_priority, int_least8_t minimum_priority, int_least8_t maximum_priority) :
-			_task_priority_default(std::clamp<int_least16_t>(default_priority,
-															 std::min(minimum_priority, maximum_priority),
-															 std::max(minimum_priority, maximum_priority))),
-			_task_priority_minimum(minimum_priority),
-			_task_priority_maximum(maximum_priority)
-		{
-		}
+	// Task priority
 
-		uint_least8_t operator()(int_least16_t priority) const
-		{
-			priority = (priority == std::numeric_limits<int_least16_t>::min() ?
-						_task_priority_default :
-						std::clamp<int_least16_t>(priority,
-												  std::min(_task_priority_minimum, _task_priority_maximum),
-												  std::max(_task_priority_minimum, _task_priority_maximum)));
-
-			return uint_least8_t(std::abs(priority - _task_priority_minimum));
-		}
-	private:
-		int_least16_t const _task_priority_default;
-		int_least8_t const _task_priority_minimum{ std::numeric_limits<int_least8_t>::min() };
-		int_least8_t const _task_priority_maximum{ std::numeric_limits<int_least8_t>::max() };
-	};
+	inline int_least8_t default_task_priority = 0;
 
 	template <class>
 	class _task; // Implementation class
@@ -492,36 +497,41 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 	template <class RetType, class ... ParamTypes>
 	class _task<RetType(ParamTypes ...)>
 	{
-		static_assert(sizeof(int_least8_t) != sizeof(int_least16_t), "Incompatible architecture"); // Will be unnecessary in future versions
 	protected:
 		_task() = default;
 		template <class FuncType, class ... ArgTypes>
 		_task(FuncType * func, ArgTypes && ... args) :
-			_task_package(implementation::functional::bind(func, std::forward<ArgTypes>(args) ...)),
+			_task_package(_stp::bind(func, std::forward<ArgTypes>(args) ...)),
 			_task_state(task_state::suspended)
 		{
 			static_assert(std::is_function_v<FuncType>,
 						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType *, ArgTypes && ...)': "
 						  "FuncType must be a function type");
-			static_assert(std::is_same_v<RetType, implementation::task_return_type<FuncType>>,
+			static_assert(std::is_same_v<RetType, _stp::task_return_type<FuncType>>,
 						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType *, ArgTypes && ...)': "
 						  "RetType must be of the same type as FuncType's return type");
-			static_assert(std::is_same_v<implementation::meta::pack<ParamTypes ...>, implementation::task_parameter_types<FuncType, ArgTypes ...>>,
+			static_assert(_stp::meta::convertible_types_v<_stp::meta::pack<ArgTypes ...>, typename _stp::meta::function_signature<FuncType>::parameter_types>,
+						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType *, ArgTypes && ...)': "
+						  "ArgTypes must be of the same types as FuncType's parameters types");
+			static_assert(std::is_same_v<_stp::meta::pack<ParamTypes ...>, _stp::task_parameter_types<FuncType, ArgTypes ...>>,
 						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType *, ArgTypes && ...)': "
 						  "ParamTypes must be of the same types as FuncType's parameters corresponding to ArgTypes' placeholder types");
 		}
 		template <class FuncType, class ObjType, class ... ArgTypes>
 		_task(FuncType ObjType::* func, ObjType * obj, ArgTypes && ... args) :
-			_task_package(implementation::functional::bind(func, obj, std::forward<ArgTypes>(args) ...)),
+			_task_package(_stp::bind(func, obj, std::forward<ArgTypes>(args) ...)),
 			_task_state(task_state::suspended)
 		{
 			static_assert(std::is_function_v<FuncType>,
 						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
 						  "FuncType must be a function type");
-			static_assert(std::is_same_v<RetType, implementation::task_return_type<FuncType>>,
+			static_assert(std::is_same_v<RetType, _stp::task_return_type<FuncType>>,
 						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
 						  "RetType must be of the same type as FuncType's return type");
-			static_assert(std::is_same_v<implementation::meta::pack<ParamTypes ...>, implementation::task_parameter_types<FuncType, ArgTypes ...>>,
+			static_assert(_stp::meta::convertible_types_v<_stp::meta::pack<ArgTypes ...>, typename _stp::meta::function_signature<FuncType>::parameter_types>,
+						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
+						  "ArgTypes must be of the same types as FuncType's parameters types");
+			static_assert(std::is_same_v<_stp::meta::pack<ParamTypes ...>, _stp::task_parameter_types<FuncType, ArgTypes ...>>,
 						  "'stp::task<RetType(ParamTypes ...)>::task(FuncType ObjType::*, ObjType *, ArgTypes && ...)': "
 						  "ParamTypes must be of the same types as FuncType's parameters corresponding to ArgTypes' placeholder types");
 		}
@@ -557,9 +567,7 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 		{
 			auto state = task_state::waiting;
 
-			_task_state.compare_exchange_strong(state, task_state::cancelling, std::memory_order_relaxed);
-
-			return state;
+			return _task_state.compare_exchange_strong(state, task_state::cancelling, std::memory_order_relaxed) ? task_state::cancelling : state;
 		}
 		void wait() const
 		{
@@ -607,7 +615,7 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 		{
 			return _task_state.load(std::memory_order_relaxed) == task_state::ready;
 		}
-		int_least16_t get_priority()
+		int_least8_t get_priority()
 		{
 			return _task_priority;
 		}
@@ -631,7 +639,7 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 					break;
 			}
 
-			std::packaged_task<void()> function(implementation::functional::bind(&_task<RetType(ParamTypes ...)>::_execute, this, std::forward<ParamTypes>(args) ...));
+			std::packaged_task<void()> function(_stp::bind(&_task<RetType(ParamTypes ...)>::_execute, this, std::forward<ParamTypes>(args) ...));
 
 			_task_future = function.get_future();
 
@@ -689,7 +697,7 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 		std::packaged_task<RetType(ParamTypes ...)> _task_package;
 		std::future<void> _task_future;
 		std::atomic<task_state> _task_state{ task_state::null };
-		int_least16_t _task_priority{ std::numeric_limits<int_least16_t>::min() };
+		int_least8_t _task_priority{ default_task_priority };
 	};
 
 	template <class>
@@ -698,10 +706,8 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 	template <class RetType, class ... ParamTypes>
 	class task<RetType(ParamTypes ...)> : public _task<RetType(ParamTypes ...)>
 	{
-		static_assert(std::negation_v<std::is_rvalue_reference<RetType>>, 
+		static_assert(!std::is_rvalue_reference_v<RetType>,
 					  "'stp::task<RetType(ParamTypes ...)>': RetType cannot be a rvalue-reference");
-
-		using result_type = std::optional<std::conditional_t<std::negation_v<std::is_reference<RetType>>, RetType, std::reference_wrapper<std::remove_reference_t<RetType>>>>;
 	public:
 		task() = default;
 		template <class FuncType, class ... ArgTypes>
@@ -728,7 +734,7 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 			return *this;
 		}
 
-		std::add_lvalue_reference_t<std::decay_t<RetType>> get()
+		std::add_lvalue_reference_t<RetType> get()
 		{
 			switch (this->_task_state.load(std::memory_order_relaxed))
 			{
@@ -767,24 +773,18 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 			_task_result.reset();
 		}
 
-		template <class ..., class Type = RetType, class = std::enable_if_t<std::is_class_v<std::remove_pointer_t<std::decay_t<Type>>>>>
-		std::add_pointer_t<std::remove_pointer_t<std::decay_t<RetType>>> operator->()
-		{
-			if constexpr (std::is_pointer_v<std::decay_t<RetType>>)
-			{
-				return get();
-			}
-			else
-			{
-				return &get();
-			}
-		}
-		operator std::add_lvalue_reference_t<std::decay_t<RetType>>()
+		operator std::add_lvalue_reference_t<RetType>()
 		{
 			return get();
 		}
 	private:
-		result_type _task_result;
+		std::optional<
+			std::conditional_t<
+				std::is_reference_v<RetType>,
+				std::reference_wrapper<std::remove_reference_t<RetType>>,
+				RetType
+			>
+		> _task_result;
 	};
 
 	template <class ... ParamTypes>
@@ -850,33 +850,21 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 	};
 
 	template <class FuncType, class ... ArgTypes>
-	task(FuncType *, ArgTypes ...) -> task<implementation::meta::make_function_signature<implementation::task_return_type<FuncType>, implementation::task_parameter_types<FuncType, ArgTypes ...>>>;
+	task(FuncType *, ArgTypes ...) -> task<_stp::task_function_type<FuncType, ArgTypes ...>>;
 	template <class FuncType, class ObjType, class ... ArgTypes>
-	task(FuncType ObjType::*, ObjType *, ArgTypes ...) -> task<implementation::meta::make_function_signature<implementation::task_return_type<FuncType>, implementation::task_parameter_types<FuncType, ArgTypes ...>>>;
+	task(FuncType ObjType::*, ObjType *, ArgTypes ...) -> task<_stp::task_function_type<FuncType, ArgTypes ...>>;
 
+	// Allows disambiguation of function overload by specifying the parameters' types
 	template <class FuncType, class ... ArgTypes>
-	inline auto make_task(FuncType * func, ArgTypes && ... args) // Allows disambiguation of function overload by specifying the parameters' types, automatically deduces type of task based on placeholder arguments, and allows construction of task with pre-set priority
+	inline auto make_task(FuncType * func, ArgTypes && ... args)
 	{
 		return task(func, std::forward<ArgTypes>(args) ...);
 	}
+	// Allows disambiguation of function overload by specifying the parameters' types
 	template <class FuncType, class ObjType, class ... ArgTypes>
 	inline auto make_task(FuncType ObjType::* func, ObjType * obj, ArgTypes && ... args)
 	{
 		return task(func, obj, std::forward<ArgTypes>(args) ...);
-	}
-	template <class FuncType, class ... ArgTypes>
-	inline auto make_task(int_least8_t prty, FuncType * func, ArgTypes && ... args)
-	{
-		task t(func, std::forward<ArgTypes>(args) ...);
-		t.set_priority(prty);
-		return t;
-	}
-	template <class FuncType, class ObjType, class ... ArgTypes>
-	inline auto make_task(int_least8_t prty, FuncType ObjType::* func, ObjType * obj, ArgTypes && ... args)
-	{
-		task t(func, obj, std::forward<ArgTypes>(args) ...);
-		t.set_priority(prty);
-		return t;
 	}
 
 	// Threadpool class
@@ -891,22 +879,15 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 	class threadpool
 	{
 	public:
-		threadpool(task_priority priority,
-				   size_t size = std::thread::hardware_concurrency(),
+		threadpool(size_t size = std::thread::hardware_concurrency(),
 				   threadpool_state state = threadpool_state::running) :
-			_threadpool_priority(priority),
 			_threadpool_size(size),
 			_threadpool_state(state)
 		{
 			for (size_t n = 0; n < size; ++n)
 			{
-				_threadpool_thread_list.emplace_back().make_thread(this);
+				_threadpool_thread_array.emplace_back().launch(this);
 			}
-		}
-		threadpool(size_t size = std::thread::hardware_concurrency(),
-				   threadpool_state state = threadpool_state::running) :
-			threadpool(task_priority(), size, state)
-		{
 		}
 		threadpool(threadpool &&) = delete;
 		threadpool & operator=(threadpool &&) = delete;
@@ -915,12 +896,11 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 			_threadpool_mutex.lock();
 
 			_threadpool_state = threadpool_state::terminating;
-
 			_threadpool_condvar.notify_all();
 
 			_threadpool_mutex.unlock();
 
-			for (auto & thread : _threadpool_thread_list)
+			for (auto & thread : _threadpool_thread_array)
 			{
 				if (thread.active)
 				{
@@ -932,15 +912,10 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 		template <class RetType, class ... ParamTypes>
 		void execute(task<RetType(ParamTypes ...)> & task, ParamTypes && ... args)
 		{
-			auto priority = _threadpool_priority(task.get_priority());
-
-			auto function = task.function(std::forward<ParamTypes>(args) ...);
-
 			std::scoped_lock<std::mutex> lock(_threadpool_queue_mutex);
 
-			_threadpool_task_queue.emplace(std::move(function), priority);
-
-			_threadpool_task.store(true, std::memory_order_relaxed);
+			_threadpool_task_queue.emplace(task.function(std::forward<ParamTypes>(args) ...), task.get_priority());
+			_threadpool_has_task.store(true, std::memory_order_relaxed);
 
 			_threadpool_condvar.notify_one();
 		}
@@ -954,14 +929,14 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 
 				if (_threadpool_size < size)
 				{
-					auto it = std::begin(_threadpool_thread_list), it_e = std::end(_threadpool_thread_list);
+					auto it = std::begin(_threadpool_thread_array), it_e = std::end(_threadpool_thread_array);
 					for (size_t n = 0; n < delta_size; ++it)
 					{
 						if (it != it_e)
 						{
 							if (it->inactive)
 							{
-								it->make_thread(this);
+								it->launch(this);
 								
 								++n;
 							}
@@ -970,7 +945,7 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 						{
 							while (n < delta_size)
 							{
-								_threadpool_thread_list.emplace_back().make_thread(this);
+								_threadpool_thread_array.emplace_back().launch(this);
 
 								++n;
 							}
@@ -979,7 +954,7 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 				}
 				else
 				{
-					auto it_b = std::begin(_threadpool_thread_list), it_e = std::end(_threadpool_thread_list), it = it_b;
+					auto it_b = std::begin(_threadpool_thread_array), it_e = std::end(_threadpool_thread_array), it = it_b;
 					for (size_t n = 0; n < delta_size; ++it)
 					{
 						if ((it != it_e ? it : it = it_b)->active)
@@ -1027,7 +1002,7 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 	private:
 		struct _task
 		{
-			_task(std::packaged_task<void()> func = std::packaged_task<void()>(), uint_least8_t prty = 0) :
+			_task(std::packaged_task<void()> func = std::packaged_task<void()>(), int_least8_t prty = 0) :
 				function(std::move(func)),
 				priority(prty),
 				origin(std::chrono::steady_clock::now())
@@ -1040,12 +1015,12 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 			}
 
 			std::packaged_task<void()> function;
-			uint_least8_t priority;
+			int_least8_t priority;
 			std::chrono::steady_clock::time_point origin;
 		};
 		struct _thread
 		{
-			void make_thread(threadpool * threadpool)
+			void launch(threadpool * threadpool)
 			{
 				active = true;
 				inactive = false;
@@ -1064,11 +1039,11 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 
 			while (_threadpool_state != threadpool_state::terminating && this_thread->active)
 			{
-				if (_threadpool_state == threadpool_state::running && _threadpool_task.load(std::memory_order_relaxed))
+				if (_threadpool_state == threadpool_state::running && _threadpool_has_task.load(std::memory_order_relaxed))
 				{
 					threadpool_lock.unlock();
 
-					if (std::scoped_lock<std::mutex> lock(_threadpool_queue_mutex); _threadpool_task.load(std::memory_order_relaxed))
+					if (std::scoped_lock<std::mutex> lock(_threadpool_queue_mutex); _threadpool_has_task.load(std::memory_order_relaxed))
 					{
 						this_thread->task = const_cast<_task &&>(_threadpool_task_queue.top());
 
@@ -1076,7 +1051,7 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 
 						if (_threadpool_task_queue.empty())
 						{
-							_threadpool_task.store(false, std::memory_order_relaxed);
+							_threadpool_has_task.store(false, std::memory_order_relaxed);
 						}
 					}
 
@@ -1099,13 +1074,14 @@ namespace stp // SimpleThreadPools - version B.5.2.1
 			}
 		}
 
-		task_priority const _threadpool_priority;
 		size_t _threadpool_size;
 		threadpool_state _threadpool_state;
-		std::atomic_bool _threadpool_task{ false };
+
 		std::priority_queue<_task, std::deque<_task>> _threadpool_task_queue;
-		std::list<_thread> _threadpool_thread_list;
 		std::mutex _threadpool_queue_mutex;
+		std::atomic_bool _threadpool_has_task{ false };
+
+		std::deque<_thread> _threadpool_thread_array;
 		std::shared_mutex _threadpool_mutex;
 		std::condition_variable_any _threadpool_condvar;
 	};

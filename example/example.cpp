@@ -8,7 +8,7 @@
 
 // Compilation variables
 
-#define	GENERATE_FILE 0
+#define OUTPUT_TO_FILE 0
 #define TEST_SINGLE_THREAD 1
 #define TEST_MULTI_THREAD 1
 #define TEST_THREAD_POOL 1
@@ -313,7 +313,7 @@ int main()
 
 	std::cout << std::scientific;
 
-#if (GENERATE_FILE)
+#if (OUTPUT_TO_FILE)
 	std::fstream fout("./example/test.txt", std::ios::out | std::ios::trunc);
 	std::streambuf * cout_buffer = std::cout.rdbuf(fout.rdbuf());
 #endif
@@ -365,7 +365,7 @@ int main()
 	total_time = 0.0;
 #endif
 
-#if (GENERATE_FILE)
+#if (OUTPUT_TO_FILE)
 	fout.close();
 	std::cout.rdbuf(cout_buffer);
 #endif
